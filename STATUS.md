@@ -2,7 +2,7 @@
 
 - 更新时间：2026-08-23（Asia/Shanghai）
 - 阶段：v0.4.0 可复现发布与供应链来源证明进入交付验证
-- 总体状态：版本/tag 一致性、受保护 main 来源、JAR/SHA-256 和 build provenance 发布链路已实现；项目保持可发布
+- 总体状态：版本/tag 一致性、受保护 main 来源、JAR/SHA-256 和 build provenance 发布链路已通过 PR #28 全套远程门禁；项目保持可发布
 
 ## 已实现
 
@@ -58,6 +58,7 @@
 - Java J2 固定2,000条中文资料基准完成：50次测量中位数1.325ms、p95 2.260ms；1秒回归门禁通过。
 - Python 包、Java JAR 与运行时版本统一为0.4.0，并由架构测试阻止版本漂移。
 - `scripts/verify-release` 已验证正确 `v0.4.0`，并拒绝缺少 `v` 前缀与跨模块不一致版本；Release 工作流不读取任何私密工作区。
+- PR #28 的 Java 21 双构建哈希、Container Smoke、Python 3.9/3.12/3.13、Public Demo 与 CodeQL 三语言检查全部成功；Container Smoke 已加入 `main` 必需检查。
 - 重构后的公开 Demo 在实际浏览器完成搜索、详情、关系地图和390×844手机布局验收，控制台0错误。
 - PR #18 经最终审阅转为 Ready，并以普通合并进入受保护的 `main`；重构分支已从本地和远端删除。
 - 合并后的 Python 3.9/3.12/3.13、Java 21、Public Demo、CodeQL 三语言和 GitHub Pages 部署全部成功。

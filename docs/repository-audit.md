@@ -28,7 +28,7 @@
 - v0.3.1 Release 已包含正式 Java JAR 与 SHA-256 校验文件。
 - v0.4.0 发布链路只接受 `main` 上版本一致的 tag，并重新执行全部核心门禁。
 - 正式 JAR 与 SHA-256 由 GitHub Actions 生成，同时建立 build provenance attestation。
-- 非 root 容器构建和真实 schema v1 只读冒烟已纳入 CI；`Container Smoke` 将作为 `main` 必需检查。
+- 非 root 容器构建和真实 schema v1 只读冒烟已纳入 CI；`Container Smoke` 已作为 `main` 必需检查。
 - GitHub Pages 公开 Demo 已从固定虚构资料自动构建并上线，不包含维护者本机知识。
 
 ## 有意留到后续

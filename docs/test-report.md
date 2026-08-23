@@ -55,6 +55,7 @@
 - SQLite 快照通过 `mode=ro&immutable=1` 打开，不创建或依赖 WAL/SHM sidecar
 - Release 门禁验证 tag、Python、Java、运行时和 CHANGELOG 版本一致，并要求发布提交属于 `main`
 - 正式 JAR 生成 SHA-256 与 GitHub build provenance；发布工作流不读取 `workspace/` 或私密产物
+- PR #28 远程验证全部成功：Java 21 两次构建 JAR 哈希一致，Container Smoke、三套 Python、Public Demo 与 CodeQL 三语言全部通过
 
 ## 端到端结果
 

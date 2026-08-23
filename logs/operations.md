@@ -223,3 +223,10 @@
 - 创建 Issue #24 和草稿 PR #26；Docker 只作为可选 Java 只读 API 部署层，不替代 Python 流水线或静态网站。
 - Linux 容器门禁发现并修复 SQLite JDBC 原生库加载目录与 WAL 快照只读打开问题；最终以非 root、只读根文件系统、只读数据库和 `mode=ro&immutable=1` 通过冒烟。
 - PR #26 的 Python 3.9/3.12/3.13、Java 21、Container Smoke、Public Demo 与 CodeQL Java/Python/JavaScript 全部成功。
+
+### v0.4.0 可验证发布候选（2026-08-23 17:46 +0800）
+
+- 创建 Issue #27 和 PR #28；正式软件版本只允许从受保护 `main` 上版本一致的语义版本 tag 生成。
+- PR #28 的 Java 21 双构建哈希、Container Smoke、Python 3.9/3.12/3.13、Public Demo 与 CodeQL Java/Python/JavaScript 全部成功。
+- 在保留原有五项必需检查的基础上，将已稳定通过的 `Container Smoke` 加入 `main` 分支保护；严格同步分支规则保持启用。
+- 发布工作流将生成版本化 JAR、SHA-256 和 GitHub build provenance，且不读取 `workspace/`、SQLite、原始资料或私密站点。
