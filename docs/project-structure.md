@@ -14,7 +14,9 @@ knowledge/
 │   │       ├── operations/checks/  # 数据库、隐私、链接、站点和网络检查
 │   │       ├── site/build/         # 规范化、payload、PWA 渲染与原子构建
 │   │       ├── publish/            # 可选发布适配器
-│   │       └── cli.py              # 命令行入口
+│   │       ├── local_manager.py    # 收件箱监听、站点服务与本地控制
+│   │       ├── local_manager_cli.py# 后台进程生命周期与用户命令
+│   │       └── cli.py              # 知识命令行入口
 │   ├── api/                        # Java 21 只读 API + 受限离线导入 CLI
 │   └── web/
 │       └── src/                    # HTML、CSS、JavaScript、离线页
@@ -38,6 +40,7 @@ knowledge/
 ├── ops/                            # 可选系统运维模板
 ├── compose.yaml                    # Java API 的本机只读容器编排
 ├── scripts/                        # 跨应用稳定入口
+├── 打开知识库.command              # macOS 双击入口
 └── tests/
     ├── fixtures/                   # 固定虚构样例
     ├── e2e/                        # 跨应用完整闭环
@@ -47,6 +50,7 @@ knowledge/
 ## 边界与责任
 
 - `apps/pipeline/` 是主写入方；它独占 SQLite schema、任务处理、分类和导出。
+- 本地知识管家只编排现有 Python 全流水线并提供上一版正常站点，不重新实现任务处理；状态、令牌和日志只进入私密 `workspace/`。
 - `apps/api/` 的 HTTP 服务只读 SQLite schema v1；同模块的可选离线 CLI 只创建 source、初始 extract 任务和审计事件，不迁移、不建表、不处理任务。
 - Python 与 Java 写入使用同一个 POSIX 项目锁，禁止并发修改 raw 和 SQLite；Java 导入在单事务失败时回滚数据库并清理新 raw。
 - `apps/web/` 是网站源码唯一位置；`workspace/site/` 只保存可重建产物。

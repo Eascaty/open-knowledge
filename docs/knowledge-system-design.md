@@ -2,7 +2,7 @@
 
 > 状态：活文档  
 > 版本：0.4.0
-> 更新时间：2026-08-10（Asia/Shanghai）
+> 更新时间：2026-08-23（Asia/Shanghai）
 > 项目根目录：`$HOME/AI/knowledge`
 
 ## 1. 目标
@@ -23,7 +23,7 @@
 
 网站已经发布的版本由云端静态托管，因此 Mac 关机后仍然可以打开；Mac 只负责处理新资料和发布新版本。
 
-实现状态：本地入库、分类、搜索、知识图、静态站、检查和发布适配代码已完成；Java 21 只读领域 API 的 J1 与中文全文搜索 J2 也已完成本地实现。
+实现状态：本地入库、分类、搜索、知识图、静态站、检查和发布适配代码已完成；项目内本地知识管家可常驻监听收件箱、自动运行全流水线并持续提供网站；Java 21 只读领域 API 的 J1 与中文全文搜索 J2 也已完成本地实现。
 虚构公开资料已经通过 GitHub Pages 提供在线 Demo；真实私密知识的线上地址仍需用户以后登录 Cloudflare 并启用 Access。本地默认零网络请求。
 
 ## 2. 当前范围
@@ -42,6 +42,7 @@
 - 可点击知识地图
 - 私密/公开静态网站
 - 自动构建、检查与安全回滚
+- 项目内单实例后台监听、首次等待页和双击启动入口
 
 ### 暂缓
 
@@ -140,7 +141,17 @@ PUBLISHED
 任何阶段失败 → RETRY → QUARANTINE
 ```
 
-### 4.1 接收
+### 4.1 常驻触发
+
+- macOS 用户双击 `打开知识库.command`，或运行 `./scripts/knowledge-manager start`。
+- 管理器只绑定 `127.0.0.1`，重复启动先核对实例标识并复用已有进程。
+- 收件箱指纹包含相对路径、大小和修改时间；文件稳定3秒后才触发，避免复制到一半就读取。
+- 首次尚未生成站点时返回自动刷新的等待页；成功后继续提供正式网站。
+- 处理失败时保留上一版正常网站并按间隔重试，不用失败产物覆盖成功版本。
+- 完整异常只进入 Git 忽略的私密日志；网页状态接口移除控制令牌、绝对路径和错误原文。
+- 停止操作必须携带匹配实例的本地控制令牌，不根据端口盲目终止其他程序。
+
+### 4.2 接收
 
 第一阶段只支持明确输入：
 
@@ -149,13 +160,13 @@ PUBLISHED
 
 不执行无限递归爬取。
 
-### 4.2 原始保存
+### 4.3 原始保存
 
 - 原始资料只追加、不覆盖。
 - 保存来源、时间、MIME 类型和 SHA-256。
 - 网页发生变化时保存新版本，不覆盖旧内容。
 
-### 4.3 解析
+### 4.4 解析
 
 候选组件：
 
@@ -167,7 +178,7 @@ PUBLISHED
 
 解析后统一生成标准 Markdown 和 JSON 元数据。
 
-### 4.4 去重
+### 4.5 去重
 
 在调用本地模型前完成：
 
@@ -178,7 +189,7 @@ PUBLISHED
 
 重复项建立别名，不直接删除。
 
-### 4.5 逐级分类
+### 4.6 逐级分类
 
 模型不能一次自由生成完整路径，而是从根节点逐级选择：
 
@@ -199,7 +210,7 @@ PUBLISHED
 
 不确定资料进入“待归类”，仍可搜索，不阻塞队列。
 
-### 4.6 知识生成
+### 4.7 知识生成
 
 每份资料至少生成：
 
@@ -222,7 +233,7 @@ AI 输出默认不是事实。状态包括：
 - `deprecated`
 - `verified-by-practice`
 
-### 4.7 检查
+### 4.8 检查
 
 发布前检查：
 
@@ -253,7 +264,7 @@ AI 输出默认不是事实。状态包括：
 | 前端 | 原生 HTML、CSS、JavaScript |
 | 浏览器搜索 | 本地静态 JSON + 原生 JavaScript |
 | 知识关系图 | 原生 SVG/Canvas 数据视图 |
-| 调度 | macOS launchd |
+| 调度 | 项目内本地知识管家；launchd 仅为可选增强 |
 | 版本 | Git |
 | 文档导出 | Markdown、JSON、GraphML |
 | 虚构公开 Demo | GitHub Pages + GitHub Actions |
@@ -261,7 +272,15 @@ AI 输出默认不是事实。状态包括：
 
 第一版不要求安装任何依赖，也不采用 Docker、n8n、LangChain、Chroma 或 Neo4j。这样即使没有 Ollama、Node 或 Pandoc，仍可完成确定性的全链路；本地模型只是可选增强。
 
-### 5.2 Java 服务与离线导入边界
+### 5.2 本地知识管家边界
+
+`apps/pipeline/src/knowledge_os/local_manager.py` 负责收件箱监听、脱敏状态、站点服务和安全停止；`local_manager_cli.py` 负责用户命令和后台进程生命周期。两者只编排现有 `run_full_pipeline`，不复制入库、分类或建站逻辑。
+
+运行状态和日志分别位于 `workspace/data/state/local-manager.json` 与 `workspace/data/logs/local-manager.log`，都属于私密工作区。状态文件权限尽量收紧为当前用户可读写；HTTP 状态响应使用显式字段白名单。知识网站和控制接口只在本机回环地址提供，端口被其他程序占用时拒绝接管；静态文件解析后必须仍位于生成站点目录内，符号链接不能借此读取项目其他文件。
+
+本功能不安装系统服务、不修改项目外目录，也不依赖 Docker、Node、第三方 Python 包或外部账号。电脑重启后重新双击项目入口即可；未来若用户明确要求开机自启，再单独启用项目已有的可选 launchd 方案。
+
+### 5.3 Java 服务与离线导入边界
 
 `apps/api/` 的 HTTP 服务是现有 Python 流水线的增量消费者；可选 Java CLI 只承担受限的离线文件入队：
 
@@ -283,14 +302,14 @@ Python 主流水线 ───────→ SQLite schema v1 ← Java 21 只读
 - 搜索响应携带 `[[...]]` 纯文本高亮片段，不返回 HTML；服务会对片段中的 HTML 特殊字符转义。
 - 固定2,000条中文资料基准与1秒回归门禁记录在 `docs/benchmarks/java-search.md`。
 
-### 5.3 共享数据与 HTTP 契约
+### 5.4 共享数据与 HTTP 契约
 
 - `packages/contracts/canonical.schema.json` 定义 canonical schema v1；网站构建在写入产物前使用标准库校验器强制验证。
 - `packages/contracts/openapi.yaml` 定义 Java 只读 HTTP API v1，作为 Web 联机模式与未来 App 的接口边界。
 - Python 与 Java 契约测试共用 `packages/contracts/examples/canonical-v1.json`，样例只含固定虚构内容。
 - v1 只允许增加可选字段；删除、改名或改变字段语义必须新增契约主版本。
 
-### 5.4 SQLite 主要表
+### 5.5 SQLite 主要表
 
 - `taxonomy_nodes`
 - `taxonomy_aliases`
@@ -306,14 +325,14 @@ Python 主流水线 ───────→ SQLite schema v1 ← Java 21 只读
 - `artifacts`
 - `deployments`
 
-### 5.5 Web 与未来 App 适配边界
+### 5.6 Web 与未来 App 适配边界
 
 - `apps/web/src/data-source.js` 提供静态构建和 HTTP API v1 两种读取适配器；现有 PWA 默认使用静态模式，保持离线优先和零在线服务成本。
 - Java HTTP 控制器只依赖应用服务，应用服务再调用只读仓储；客户端不得直接绑定 SQLite schema。
 - 未来原生 App 复用 OpenAPI v1，并在客户端适配层实现鉴权、缓存和同步，不复制 Python 处理逻辑。
 - 在目标平台、离线编辑和同步策略明确前不创建空移动端工程，以免过早锁定技术栈。
 
-### 5.6 Java 服务部署与可观测边界
+### 5.7 Java 服务部署与可观测边界
 
 - API 镜像使用固定 Temurin 21 补丁版本的多阶段构建，运行阶段只保留 JRE 和可执行 JAR，并使用非 root UID 10001。
 - `.dockerignore` 从构建上下文排除 `workspace/`、导出物、站点生成物和 SQLite 文件；真实知识不得进入镜像层。
@@ -341,6 +360,7 @@ knowledge/
 ├── ops/
 ├── compose.yaml        # API 本机只读容器编排
 ├── scripts/
+├── 打开知识库.command  # macOS 双击启动本地知识管家
 └── tests/e2e/
 ```
 
@@ -350,6 +370,7 @@ knowledge/
 - `workspace/` 除说明文件外整体忽略；原始资料只追加。
 - `apps/web/src/` 是手写网站源码唯一位置，`workspace/site/` 只是派生产物。
 - Python 顶层旧导入由兼容 facade 保留；实现模块以600行为审查上限。
+- 本地知识管家只负责编排和服务，不成为第二套流水线；控制状态与日志不得进入 Git。
 - 详细边界以 `docs/project-structure.md` 为准。
 ## 7. 在线访问设计
 
