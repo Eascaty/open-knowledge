@@ -1,9 +1,9 @@
 # GitHub 发布后缺口审计
 
-- 日期：2026-08-09（Asia/Shanghai）
+- 日期：2026-08-23（Asia/Shanghai）
 - 仓库：`Eascaty/personal-knowledge-os`
 - 审计范围：开源元数据、分支策略、安全功能、依赖维护、构建复现、CI、Release 与访客体验
-- 结果：高优先级缺口已在 PR #12 补齐，并随 `v0.3.1` 发布。
+- 结果：仓库安全基线已在 `v0.3.1` 建立；J2/J3/J4 与 v0.4.0 可复现发布链路随后完成。
 
 ## 已补齐
 
@@ -26,14 +26,14 @@
 - Git 公开归档不包含真实知识、SQLite、私密导出或生成站点。
 - GitHub Dependabot 安全告警：0。
 - v0.3.1 Release 已包含正式 Java JAR 与 SHA-256 校验文件。
+- v0.4.0 发布链路只接受 `main` 上版本一致的 tag，并重新执行全部核心门禁。
+- 正式 JAR 与 SHA-256 由 GitHub Actions 生成，同时建立 build provenance attestation。
+- 非 root 容器构建和真实 schema v1 只读冒烟已纳入 CI；`Container Smoke` 已作为 `main` 必需检查。
 - GitHub Pages 公开 Demo 已从固定虚构资料自动构建并上线，不包含维护者本机知识。
 
 ## 有意留到后续
 
-- J2：FTS5/Lucene 中文全文搜索、安全高亮和性能基准。
-- J3：Java 幂等导入与事务迁移。
-- J4：OpenAPI、Docker 与可部署服务。
-- 使用虚构公开资料制作 GitHub Pages/Cloudflare Pages 演示，不公开真实知识。
+- 真实私密站点仍需用户确认账号和访问范围后再配置 Cloudflare Pages + Access。
+- Java API 的公网认证、TLS 与同步协议需等待真实部署和 App 需求，不由容器化自动推导。
+- 原生 App 需先确认目标平台、离线编辑和同步冲突策略。
 - 大型综合笔记按标题拆成多知识卡片。
-
-这些项目属于新功能或架构里程碑，不应混入 v0.3.1 工程加固补丁。

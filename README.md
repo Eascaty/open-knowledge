@@ -273,6 +273,18 @@ curl http://127.0.0.1:8080/actuator/health/readiness
 
 项目预留了 Cloudflare Pages 适配器，但默认只生成部署计划，不会替你登录、创建收费资源或上传内容。
 
+## 可验证版本发布
+
+正式版本只从已经合入 `main` 的 `v<major>.<minor>.<patch>` tag 生成。发布工作流会重新运行 Python、Java、Web、公开 Demo 和容器构建，随后生成版本化 Java JAR、SHA-256 校验文件与 GitHub build provenance；任何 tag、Python、Java、运行时或 CHANGELOG 版本不一致都会直接拒绝发布。
+
+发布前可在本地检查版本：
+
+```bash
+./scripts/verify-release v0.4.0
+```
+
+Release 产物不包含 `workspace/`、SQLite、原始资料、私密站点或凭据。
+
 ## 项目目录
 
 ```text
@@ -299,7 +311,7 @@ personal-knowledge-os/
 - Web：静态包/API v1 两种数据源适配器测试，并完成桌面与390×844手机浏览器验收。
 - CI：Python 3.9、3.12、3.13、Java 21、Public Demo 与非 root 容器冒烟均为持续验证项。
 - 安全：CodeQL、Dependabot、Secret Scanning、Push Protection 已启用。
-- 发布：提供可校验的 Spring Boot JAR 和 SHA-256 文件。
+- 发布：从 `main` tag 可复现生成 Spring Boot JAR、SHA-256 与 build provenance。
 
 查看 [当前项目状态](STATUS.md)、[测试报告](docs/test-report.md)和 [GitHub 发布后审计](docs/repository-audit.md)。
 

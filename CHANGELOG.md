@@ -6,7 +6,7 @@
 - 增加 macOS `打开知识库.command` 双击入口、首次构建等待页、状态/停止命令和失败保留旧站策略。
 - 本地控制仅绑定回环地址，控制令牌和完整错误保存在 Git 忽略的私密工作区；网页状态使用脱敏字段白名单，静态服务拒绝符号链接越界读取。
 
-## 0.4.0 — 2026-08-12
+## 0.4.0 — 2026-08-23
 
 - 将 Python、Java、Web 重整为 `apps/`，共享契约集中到 `packages/contracts/`，真实私密运行状态统一到 Git 忽略的 `workspace/`。
 - 按存储、处理、运维检查和网站构建职责拆分 Python 大模块，并保留旧导入兼容 facade。
@@ -17,6 +17,8 @@
 - Java 搜索升级为 SQLite FTS5 trigram、BM25 排序、安全高亮和参数化 LIKE 降级，并增加固定中文数据性能基准。
 - 增加受限 Java 离线文件导入 CLI、跨 Python/Java 的 POSIX 项目锁以及 raw/SQLite 回滚和幂等测试；HTTP API 保持只读。
 - Python 包、Java JAR 与运行时版本统一为 `0.4.0`，自动测试阻止跨模块版本再次漂移。
+- 增加非 root、只读文件系统的 Java API 容器、数据库就绪探针和真实 Linux 容器门禁；Docker 保持可选部署层。
+- 增加 tag/多运行时版本一致性校验、版本化 JAR、SHA-256 与 GitHub build provenance 的可复现 Release 流水线。
 
 ## 0.3.1 — 2026-08-09
 

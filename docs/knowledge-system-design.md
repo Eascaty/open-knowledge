@@ -417,13 +417,22 @@ exports/public/
 - 日志、缓存和隔离文件
 - 密钥和部署 Token
 
-### 7.3 私密版与公开版
+### 7.4 私密版与公开版
 
 - 私密版：完整的整理后知识，受 Access 登录保护。
 - 公开版：仅包含 `visibility: public` 内容。
 - 默认可见性始终为 `private`。
 
-### 7.4 构建与发布限制
+### 7.5 软件版本发布链路
+
+- 正式软件版本只由已经合入 `main` 的语义版本 tag 触发，不接受功能分支提交或人工上传的未验证 JAR。
+- `scripts/verify-release` 强制 tag、`pyproject.toml`、Python 运行时、Java POM 和 CHANGELOG 版本一致。
+- Release 工作流重新执行 Python、Java、Web、公开 Demo 与容器构建，生成版本化 JAR 和 SHA-256。
+- GitHub artifact attestation 为发布文件记录 build provenance；工作流仅申请 Release 和 attestation 所需权限。
+- 构建上下文与发布文件白名单都不包含 `workspace/`、SQLite、原始资料、private 站点或凭据。
+- 工作流只由显式版本 tag 触发；Dependabot 或普通依赖更新不会自动发布。
+
+### 7.6 网站构建与发布限制
 
 ```yaml
 publish:
@@ -443,7 +452,7 @@ publish:
 5. 检查线上地址。
 6. 失败则保留或恢复上一正常版本。
 
-### 7.5 网站形态
+### 7.7 网站形态
 
 - 一级专业模块入口
 - 左侧母子目录
