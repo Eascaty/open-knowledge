@@ -91,13 +91,17 @@ cp tests/fixtures/java_g1.md workspace/inbox/files/
 
 也可以直接把自己的文件复制到 `workspace/inbox/files/`。原文件不会被覆盖；系统会把不可变副本、标准化内容和知识条目分别保存。
 
-### 4. 一条命令完成处理
+### 4. 双击打开知识库
+
+在 macOS Finder 中双击项目根目录的 `打开知识库.command`。它会在后台启动本地知识管家并自动打开浏览器，不需要 Docker，也不需要一直保留终端窗口。
+
+如果更喜欢命令行，等价入口是：
 
 ```bash
-./scripts/run-pipeline
+./scripts/knowledge-manager start
 ```
 
-它会自动初始化目录和 SQLite，扫描收件箱，完成去重、解析、分类、知识生成、网站构建以及发布前健康检查。
+第一次还没有网站时，浏览器会显示“知识库正在准备”，完成后自动刷新。知识管家会初始化目录和 SQLite，扫描收件箱，完成去重、解析、分类、知识生成、网站构建以及健康检查。
 
 成功输出中应该看到：
 
@@ -111,21 +115,18 @@ cp tests/fixtures/java_g1.md workspace/inbox/files/
 }
 ```
 
-### 5. 打开知识网站
+### 5. 继续投入资料
 
-```bash
-./scripts/preview-site
-```
-
-浏览器访问 [http://127.0.0.1:8765](http://127.0.0.1:8765)。按 `Control + C` 停止预览服务。
+知识管家运行期间，只要继续把文件放进 `workspace/inbox/files/`，它就会在文件稳定后自动更新。知识网站固定访问 [http://127.0.0.1:8765](http://127.0.0.1:8765)；重复双击只会复用同一个后台实例，不会越开越多。
 
 ## 日常怎么使用
 
-最常见的使用方式只有三步：
+最常见的使用方式只有两步：
 
-1. 把新资料放进 `workspace/inbox/files/`。
-2. 运行 `./scripts/run-pipeline`。
-3. 打开本地网站，或者使用命令行搜索。
+1. 第一次或电脑重启后，双击 `打开知识库.command`。
+2. 把新资料放进 `workspace/inbox/files/`，等待网页自动更新。
+
+后台处理失败时，上一版正常网站仍会继续提供；错误详情只写入 Git 忽略的私密日志。知识管家只监听本机 `127.0.0.1`，控制令牌不会出现在网页状态接口中。
 
 支持的输入包括：
 
@@ -137,6 +138,18 @@ cp tests/fixtures/java_g1.md workspace/inbox/files/
 常用命令：
 
 ```bash
+# 启动并打开网站；重复执行会复用现有实例
+./scripts/knowledge-manager start
+
+# 查看后台状态和最近一次处理结果
+./scripts/knowledge-manager status
+
+# 安全停止本项目匹配的后台实例
+./scripts/knowledge-manager stop
+
+# 手工立即跑一次完整流水线（排障或自动化脚本使用）
+./scripts/run-pipeline
+
 # 查看资料、任务和索引状态
 ./scripts/kb status
 
@@ -178,7 +191,8 @@ cp tests/fixtures/java_g1.md workspace/inbox/files/
 
 ```mermaid
 flowchart LR
-    A["本地文件"] --> B["Python 入库、去重与分类"]
+    A["本地文件"] --> M["本地知识管家"]
+    M --> B["Python 入库、去重与分类"]
     B --> C[("SQLite schema v1")]
     B --> D["Markdown Vault"]
     B --> E["静态知识网站 / PWA"]
@@ -189,6 +203,7 @@ flowchart LR
 ```
 
 - **Python 主流水线**：拥有 schema、任务处理、分类、提炼、建站和运维检查；Java 可选 CLI 仅负责兼容的离线文件入队。
+- **本地知识管家**：单实例后台监听收件箱、运行流水线并持续提供上一版正常网站；只依赖 Python 标准库。
 - **SQLite**：保存可审计的结构化状态，并提供 FTS5 搜索能力。
 - **静态网站**：原生 HTML、CSS、JavaScript，无前端运行时依赖。
 - **Java 只读 API**：只读取 Python 已生成的 SQLite，并结构性过滤 private 内容和本地绝对路径。
@@ -273,6 +288,7 @@ personal-knowledge-os/
 ├── docs/                     # 设计、路线、测试和运行手册
 ├── ops/                      # launchd 等可选运维模板
 ├── scripts/                  # 稳定的一键入口
+├── 打开知识库.command        # macOS 双击入口
 └── tests/                    # 跨应用测试和虚构样例
 ```
 
