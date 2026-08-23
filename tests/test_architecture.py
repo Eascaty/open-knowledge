@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 import unittest
 import xml.etree.ElementTree as ElementTree
 from pathlib import Path
@@ -32,6 +33,52 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("-DskipTests clean package", java_import)
         self.assertIn("personal-knowledge-service-*.jar", java_import)
         self.assertIn("! -name '*.jar.original'", java_import)
+
+    def test_release_gate_accepts_only_current_version_tag(self):
+        root = Path(__file__).resolve().parents[1]
+        verifier = root / "scripts" / "verify-release"
+
+        accepted = subprocess.run(
+            [str(verifier), f"v{__version__}"],
+            cwd=root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(accepted.returncode, 0, accepted.stderr)
+        self.assertEqual(accepted.stdout.strip(), __version__)
+
+        for invalid in (__version__, "v0.0.0"):
+            rejected = subprocess.run(
+                [str(verifier), invalid],
+                cwd=root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(rejected.returncode, 0, invalid)
+
+    def test_release_workflow_attests_only_verified_main_tags(self):
+        root = Path(__file__).resolve().parents[1]
+        workflow = (root / ".github/workflows/release.yml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('tags:\n      - "v[0-9]*.[0-9]*.[0-9]*"', workflow)
+        self.assertIn('git merge-base --is-ancestor "${GITHUB_SHA}" origin/main', workflow)
+        self.assertIn("./scripts/verify-release", workflow)
+        self.assertIn("actions/attest-build-provenance@v3", workflow)
+        self.assertIn("-Dproject.build.outputTimestamp", workflow)
+        self.assertIn('test "${first_hash}" = "${second_hash}"', workflow)
+        self.assertIn("sha256sum", workflow)
+        self.assertIn("gh release create", workflow)
+        self.assertNotIn("workspace/", workflow)
+
+        ci_workflow = (root / ".github/workflows/ci.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("-Dproject.build.outputTimestamp", ci_workflow)
+        self.assertIn('test "${first_hash}" = "${second_hash}"', ci_workflow)
 
     def test_legacy_facades_keep_public_entrypoints(self):
         self.assertIs(db.connect, sqlite_storage.connect)

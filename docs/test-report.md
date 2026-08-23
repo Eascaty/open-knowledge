@@ -1,8 +1,8 @@
 # 测试报告
 
-- 日期：2026-08-12（Asia/Shanghai）
+- 日期：2026-08-23（Asia/Shanghai）
 - 运行环境：macOS、Python 3.9.6、SQLite FTS5 trigram、Temurin JDK 21.0.12、Maven 3.9.11
-- 结果：28 项 Python 测试、34 项 Java 测试与2个 Web 数据源场景全部通过；J4 Linux 容器冒烟通过
+- 结果：30 项 Python 测试、34 项 Java 测试与2个 Web 数据源场景全部通过；J4 Linux 容器冒烟通过
 - 正式目录复验：`$HOME/AI/knowledge`
 - 最终健康检查：PASS；隐私问题0；断链0；网络请求0
 - 浏览器验收：桌面1280×720与手机390×844布局正常，分类导航可交互，控制台0错误
@@ -53,6 +53,8 @@
 - SQLite JDBC 原生库使用专用受限 tmpfs；普通 `/tmp` 与数据库挂载不获得执行权限
 - readiness 失败时 CI 输出容器 UID、挂载权限和脱敏 SQL 状态，响应仍不公开数据库详情
 - SQLite 快照通过 `mode=ro&immutable=1` 打开，不创建或依赖 WAL/SHM sidecar
+- Release 门禁验证 tag、Python、Java、运行时和 CHANGELOG 版本一致，并要求发布提交属于 `main`
+- 正式 JAR 生成 SHA-256 与 GitHub build provenance；发布工作流不读取 `workspace/` 或私密产物
 
 ## 端到端结果
 

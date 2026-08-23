@@ -1,0 +1,73 @@
+#!/bin/sh
+set -eu
+
+if [ "$#" -ne 1 ]; then
+  echo "用法：./scripts/verify-release v<项目版本>" >&2
+  exit 2
+fi
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+PROJECT_ROOT=$(dirname -- "${SCRIPT_DIR}")
+TAG=$1
+
+case "${TAG}" in
+  v[0-9]*.[0-9]*.[0-9]*) ;;
+  *)
+    echo "发布标签必须使用 v<major>.<minor>.<patch> 格式：${TAG}" >&2
+    exit 2
+    ;;
+esac
+
+python3 - "${PROJECT_ROOT}" "${TAG}" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+root = Path(sys.argv[1]).resolve()
+tag = sys.argv[2]
+
+
+def require_match(path: Path, pattern: str, label: str) -> str:
+    content = path.read_text(encoding="utf-8")
+    match = re.search(pattern, content, re.MULTILINE)
+    if match is None:
+        raise SystemExit(f"无法从 {path.relative_to(root)} 读取{label}")
+    return match.group(1)
+
+
+python_version = require_match(
+    root / "pyproject.toml",
+    r'^version = "([0-9]+\.[0-9]+\.[0-9]+)"$',
+    "项目版本",
+)
+runtime_version = require_match(
+    root / "apps/pipeline/src/knowledge_os/__init__.py",
+    r'^__version__ = "([0-9]+\.[0-9]+\.[0-9]+)"$',
+    "运行时版本",
+)
+
+pom_root = ET.parse(root / "apps/api/pom.xml").getroot()
+namespace = {"m": "http://maven.apache.org/POM/4.0.0"}
+java_version = pom_root.findtext("m:version", namespaces=namespace)
+
+versions = {
+    "tag": tag.removeprefix("v"),
+    "pyproject": python_version,
+    "runtime": runtime_version,
+    "pom": java_version,
+}
+if len(set(versions.values())) != 1:
+    details = ", ".join(f"{name}={value}" for name, value in versions.items())
+    raise SystemExit(f"发布版本不一致：{details}")
+
+changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
+if not re.search(
+    rf"^## {re.escape(python_version)} — \d{{4}}-\d{{2}}-\d{{2}}$",
+    changelog,
+    re.MULTILINE,
+):
+    raise SystemExit(f"CHANGELOG.md 缺少已定稿的 {python_version} 版本段")
+
+print(python_version)
+PY
