@@ -1,8 +1,8 @@
 # 项目状态
 
-- 更新时间：2026-08-12（Asia/Shanghai）
-- 阶段：Java J4 可部署只读服务已完成交付验证
-- 总体状态：J4 非 root 容器、只读 Compose、存活/数据库就绪探针与 Linux 容器门禁全部成功；项目保持可发布
+- 更新时间：2026-08-23（Asia/Shanghai）
+- 阶段：v0.4.0 可复现发布与供应链来源证明进入交付验证
+- 总体状态：版本/tag 一致性、受保护 main 来源、JAR/SHA-256 和 build provenance 发布链路已通过 PR #28 全套远程门禁；项目保持可发布
 
 ## 已实现
 
@@ -33,6 +33,7 @@
 - Java HTTP 默认仅监听 `127.0.0.1`，外部监听必须显式设置环境变量。
 - Java API 提供 Actuator liveness/readiness；readiness 复用 schema v1 只读检查，不公开健康详情。
 - J4 容器使用固定 Temurin 21 补丁版本和非 root UID 10001；Compose 根文件系统与数据库均只读，移除全部 capabilities，并默认只绑定本机回环地址。
+- Release 只接受已合入 `main` 且与 Python、Java、运行时和 CHANGELOG 一致的版本 tag；正式 JAR 同时生成 SHA-256 与 GitHub build provenance。
 - launchd 项目内模板，未修改 macOS 系统目录。
 
 ## 已验证环境
@@ -46,7 +47,7 @@
 ## 最近验证
 
 - Python 3.9 语法解析通过。
-- 28 项 Python unittest 全部通过。
+- 30 项 Python unittest 全部通过。
 - Python 存储、知识处理、检查和网站构建已拆为职责模块；兼容 facade 保留旧导入，架构测试限制实现模块不超过600行。
 - 工程已迁移为 `apps/ + packages/ + workspace/` 单仓库：Python、Java、Web 各自归位，私密输入、SQLite、Vault 与私密构建统一进入 Git 忽略的 `workspace/`。
 - 真实 SQLite 迁移前已完成一致性备份，迁移后完整性检查、现有资料去重、全流水线、发布门禁与健康检查通过。
@@ -56,6 +57,8 @@
 - J4 增加健康指标、实际 HTTP 探针与不可变 WAL 快照测试，Java 测试总数为34项；Linux 容器冒烟与覆盖率门禁均通过。
 - Java J2 固定2,000条中文资料基准完成：50次测量中位数1.325ms、p95 2.260ms；1秒回归门禁通过。
 - Python 包、Java JAR 与运行时版本统一为0.4.0，并由架构测试阻止版本漂移。
+- `scripts/verify-release` 已验证正确 `v0.4.0`，并拒绝缺少 `v` 前缀与跨模块不一致版本；Release 工作流不读取任何私密工作区。
+- PR #28 的 Java 21 双构建哈希、Container Smoke、Python 3.9/3.12/3.13、Public Demo 与 CodeQL 三语言检查全部成功；Container Smoke 已加入 `main` 必需检查。
 - 重构后的公开 Demo 在实际浏览器完成搜索、详情、关系地图和390×844手机布局验收，控制台0错误。
 - PR #18 经最终审阅转为 Ready，并以普通合并进入受保护的 `main`；重构分支已从本地和远端删除。
 - 合并后的 Python 3.9/3.12/3.13、Java 21、Public Demo、CodeQL 三语言和 GitHub Pages 部署全部成功。

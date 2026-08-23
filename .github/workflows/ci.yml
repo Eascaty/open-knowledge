@@ -67,7 +67,23 @@ jobs:
           cache-dependency-path: apps/api/pom.xml
       - name: Build and test Java service
         working-directory: apps/api
-        run: ./mvnw --batch-mode verify
+        run: |
+          release_epoch=$(git show -s --format=%ct "${GITHUB_SHA}")
+          ./mvnw --batch-mode \
+            -Dproject.build.outputTimestamp="${release_epoch}" verify
+          jar_path=$(find target -maxdepth 1 -type f \
+            -name 'personal-knowledge-service-*.jar' \
+            ! -name '*.jar.original')
+          test -n "${jar_path}"
+          test "$(printf '%s\n' "${jar_path}" | wc -l | tr -d ' ')" = "1"
+          first_hash=$(sha256sum "${jar_path}" | cut -d ' ' -f 1)
+          ./mvnw --batch-mode -DskipTests \
+            -Dproject.build.outputTimestamp="${release_epoch}" clean package
+          jar_path=$(find target -maxdepth 1 -type f \
+            -name 'personal-knowledge-service-*.jar' \
+            ! -name '*.jar.original')
+          second_hash=$(sha256sum "${jar_path}" | cut -d ' ' -f 1)
+          test "${first_hash}" = "${second_hash}"
 
   container-smoke:
     name: Container Smoke
