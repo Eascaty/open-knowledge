@@ -230,3 +230,10 @@
 - PR #28 的 Java 21 双构建哈希、Container Smoke、Python 3.9/3.12/3.13、Public Demo 与 CodeQL Java/Python/JavaScript 全部成功。
 - 在保留原有五项必需检查的基础上，将已稳定通过的 `Container Smoke` 加入 `main` 分支保护；严格同步分支规则保持启用。
 - 发布工作流将生成版本化 JAR、SHA-256 和 GitHub build provenance，且不读取 `workspace/`、SQLite、原始资料或私密站点。
+
+### v0.4.0 正式发布与知识管家合并（2026-08-23）
+
+- 17:52:17 +0800，`v0.4.0` 正式 Release 发布，目标提交为 `3c2dd81a1bb579e12cd0b707433b6fe046f399ac`。
+- 正式产物 `personal-knowledge-service-0.4.0.jar` 下载后通过 SHA-256 校验，摘要为 `4d463146880442f9cfd2647d4ae543f41a56f075d9f0533d095426fd1830c22c`；GitHub build provenance attestation 验证通过。
+- 18:24:56 +0800，PR #30 以普通合并进入受保护 `main`，合并提交为 `830efd928598658bfed3a887672fa9e7d047148c`。
+- 合并后的 CI、GitHub Pages 与 CodeQL 均成功；本记录不包含任何真实知识、SQLite 路径或私密构建信息。

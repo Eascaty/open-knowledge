@@ -123,6 +123,8 @@ TEXT_EXTENSIONS = {
     ".yaml",
     ".yml",
 }
+MAX_DOCX_XML_BYTES = 32 * 1024 * 1024
+MAX_DOCX_COMPRESSION_RATIO = 200
 
 
 def _decode_text(data: bytes) -> str:
@@ -149,7 +151,18 @@ def _title_from_text(text: str, fallback: str) -> str:
 def _extract_docx(path: Path) -> str:
     try:
         with zipfile.ZipFile(str(path)) as archive:
-            xml_data = archive.read("word/document.xml")
+            document = archive.getinfo("word/document.xml")
+            if document.flag_bits & 0x1:
+                raise ExtractionError("encrypted DOCX is not supported")
+            if document.file_size > MAX_DOCX_XML_BYTES:
+                raise ExtractionError("DOCX document.xml exceeds the safe limit")
+            compression_ratio = document.file_size / max(1, document.compress_size)
+            if compression_ratio > MAX_DOCX_COMPRESSION_RATIO:
+                raise ExtractionError("DOCX compression ratio exceeds the safe limit")
+            with archive.open(document) as source:
+                xml_data = source.read(MAX_DOCX_XML_BYTES + 1)
+            if len(xml_data) > MAX_DOCX_XML_BYTES:
+                raise ExtractionError("DOCX document.xml exceeds the safe limit")
     except (zipfile.BadZipFile, KeyError) as exc:
         raise ExtractionError(f"invalid DOCX: {exc}") from exc
     root = ElementTree.fromstring(xml_data)
@@ -218,21 +231,35 @@ def extract_source(path: Path, original_name: str) -> Tuple[str, str]:
 
 def _normalized_markdown(
     *,
+    document_id: str,
     source_id: str,
     sha256: str,
     title: str,
     original_name: str,
     imported_at: str,
     body: str,
+    section_index: int = 0,
+    heading_path: Tuple[str, ...] = (),
+    source_line_start: Optional[int] = None,
+    source_line_end: Optional[int] = None,
+    body_sha256: str = "",
+    splitter_version: str = "single-v1",
 ) -> str:
     frontmatter = {
-        "id": source_id,
+        "id": document_id,
+        "source_id": source_id,
         "source_sha256": sha256,
         "title": title,
         "original_name": original_name,
         "imported_at": imported_at,
         "visibility": "private",
         "generated_by": "knowledge-os/extract-v1",
+        "section_index": section_index,
+        "heading_path": list(heading_path),
+        "source_line_start": source_line_start,
+        "source_line_end": source_line_end,
+        "body_sha256": body_sha256,
+        "splitter_version": splitter_version,
     }
     lines = ["---"]
     for key, value in frontmatter.items():

@@ -88,12 +88,13 @@ jobs:
           cd release
           sha256sum "${artifact}" > "${artifact}.sha256"
       - name: Upload verified artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-${{ github.ref_name }}
           path: release/
           if-no-files-found: error
           retention-days: 30
+          overwrite: true
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v3
         with:

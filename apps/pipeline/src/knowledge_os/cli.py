@@ -129,6 +129,10 @@ def _command_run(arguments: argparse.Namespace) -> int:
             adapter,
             max_jobs=arguments.max_jobs,
         )
+        status = db.status_summary(connection)
+        failed = int(status["job_status"].get("failed", 0))
+        pending = int(status["jobs_pending"])
+        queue_ok = failed == 0 and pending == 0
         site_data = None
         if not arguments.no_build_data:
             site_data = build_site_data(
@@ -140,22 +144,23 @@ def _command_run(arguments: argparse.Namespace) -> int:
             )
         _emit(
             {
-                "ok": summary.failed == 0,
+                "ok": queue_ok,
                 "jobs": {
                     "claimed": summary.claimed,
                     "completed": summary.completed,
                     "retried": summary.retried,
                     "failed": summary.failed,
+                    "pending": pending,
                 },
                 "site_data": (
                     str(paths.site_data_dir / "site-data.json")
                     if site_data is not None
                     else None
                 ),
-                "status": db.status_summary(connection),
+                "status": status,
             }
         )
-        return 0 if summary.failed == 0 else 2
+        return 0 if queue_ok else 2
     finally:
         connection.close()
 
@@ -228,7 +233,8 @@ def _command_status(arguments: argparse.Namespace) -> int:
                 )
             )
         failed = int(status["job_status"].get("failed", 0))
-        return 0 if failed == 0 else 2
+        pending = int(status["jobs_pending"])
+        return 0 if failed == 0 and pending == 0 else 2
     finally:
         connection.close()
 

@@ -47,8 +47,31 @@ jobs:
           python-version: "3.12"
       - name: Build synthetic public demo
         run: ./scripts/build-demo "${RUNNER_TEMP}/personal-knowledge-os-demo"
-      - name: Test Web data-source adapters
+      - name: Test Web read and local inbox adapters
         run: ./scripts/test-web
+      - name: Stage public artifact round-trip fixture
+        run: |
+          artifact_root="${RUNNER_TEMP}/artifact-smoke-source"
+          mkdir -p "${artifact_root}"
+          cp packages/contracts/examples/canonical-v1.json "${artifact_root}/"
+          cd "${artifact_root}"
+          sha256sum canonical-v1.json > canonical-v1.json.sha256
+      - name: Upload public artifact round-trip fixture
+        uses: actions/upload-artifact@v7
+        with:
+          name: artifact-smoke-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/artifact-smoke-source/
+          if-no-files-found: error
+          retention-days: 1
+      - name: Download public artifact round-trip fixture
+        uses: actions/download-artifact@v8
+        with:
+          name: artifact-smoke-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/artifact-smoke-verified/
+      - name: Verify public artifact checksum
+        run: |
+          cd "${RUNNER_TEMP}/artifact-smoke-verified"
+          sha256sum -c canonical-v1.json.sha256
 
   java-test:
     name: Java 21
@@ -97,7 +120,7 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - name: Create isolated schema v1 database
+      - name: Create isolated schema v2 database
         run: |
           smoke_root="${RUNNER_TEMP}/knowledge-api-smoke"
           mkdir -p "${smoke_root}/config"
@@ -141,6 +164,6 @@ jobs:
           curl --fail --silent http://127.0.0.1:18080/actuator/health/readiness \
             | grep --quiet '"status":"UP"'
           curl --fail --silent http://127.0.0.1:18080/api/v1/health \
-            | grep --quiet '"schema_version":1'
+            | grep --quiet '"schema_version":2'
           after=$(sha256sum "${SMOKE_DB}" | cut -d ' ' -f 1)
           test "${before}" = "${after}"

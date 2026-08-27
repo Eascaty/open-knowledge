@@ -48,6 +48,7 @@ def _prepare_start_state(paths: ProjectPaths, instance_id: str, port: int) -> No
         "successful_inbox_fingerprint": previous.get(
             "successful_inbox_fingerprint"
         ),
+        "recent_uploads": previous.get("recent_uploads", []),
     }
     _write_state(_state_path(paths), state)
 

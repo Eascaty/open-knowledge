@@ -12,6 +12,8 @@ from ..config import ProjectPaths
 from .gate import run_prebuild_gate
 from .health import run_health_checks, write_health_report
 from .lock import LockUnavailable, ProjectLock
+from .migration import migrate_project_database
+from .restore import RestoreDrillError, run_restore_drill
 from .snapshot import SnapshotError, create_sqlite_snapshot
 
 
@@ -65,6 +67,48 @@ def _backup(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _migrate(arguments: argparse.Namespace) -> int:
+    root = arguments.root.expanduser().resolve()
+    with ProjectLock(root, purpose="schema-migration"):
+        result = migrate_project_database(root)
+    _emit(
+        {
+            "ok": True,
+            "changed": result.changed,
+            "from_version": result.from_version,
+            "to_version": result.to_version,
+            "requeued_sources": result.requeued_sources,
+            "snapshot": (
+                str(result.snapshot.snapshot) if result.snapshot is not None else None
+            ),
+            "snapshot_sha256": (
+                result.snapshot.sha256 if result.snapshot is not None else None
+            ),
+        }
+    )
+    return 0
+
+
+def _restore_drill(arguments: argparse.Namespace) -> int:
+    result = run_restore_drill(
+        arguments.snapshot,
+        expected_sha256=arguments.sha256,
+    )
+    _emit(
+        {
+            "ok": True,
+            "snapshot": str(result.snapshot),
+            "sha256": result.sha256,
+            "schema_version": result.schema_version,
+            "counts": result.counts,
+            "integrity": result.integrity,
+            "foreign_key_violations": result.foreign_key_violations,
+            "live_database_modified": False,
+        }
+    )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m knowledge_os.operations",
@@ -82,6 +126,19 @@ def build_parser() -> argparse.ArgumentParser:
     backup = commands.add_parser("backup", help="生成经过完整性验证的 SQLite 快照")
     backup.add_argument("--output", type=Path)
     backup.set_defaults(handler=_backup)
+
+    migrate = commands.add_parser(
+        "migrate", help="先生成一致性快照，再显式迁移数据库 schema"
+    )
+    migrate.set_defaults(handler=_migrate)
+
+    restore = commands.add_parser(
+        "restore-drill",
+        help="在临时候选库中恢复并校验快照，不覆盖正式数据库",
+    )
+    restore.add_argument("snapshot", type=Path)
+    restore.add_argument("--sha256")
+    restore.set_defaults(handler=_restore_drill)
     return parser
 
 
@@ -89,7 +146,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     arguments = build_parser().parse_args(argv)
     try:
         return int(arguments.handler(arguments))
-    except (LockUnavailable, SnapshotError, OSError, ValueError) as exc:
+    except (
+        LockUnavailable,
+        RestoreDrillError,
+        SnapshotError,
+        OSError,
+        RuntimeError,
+        ValueError,
+    ) as exc:
         print("knowledge-os operations: {}".format(exc), file=sys.stderr)
         return 2
 

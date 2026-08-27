@@ -68,6 +68,9 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn('git merge-base --is-ancestor "${GITHUB_SHA}" origin/main', workflow)
         self.assertIn("./scripts/verify-release", workflow)
         self.assertIn("actions/attest-build-provenance@v3", workflow)
+        self.assertIn("actions/upload-artifact@v7", workflow)
+        self.assertNotIn("actions/upload-artifact@v4", workflow)
+        self.assertIn("overwrite: true", workflow)
         self.assertIn("-Dproject.build.outputTimestamp", workflow)
         self.assertIn('test "${first_hash}" = "${second_hash}"', workflow)
         self.assertIn("sha256sum", workflow)
@@ -79,6 +82,12 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         )
         self.assertIn("-Dproject.build.outputTimestamp", ci_workflow)
         self.assertIn('test "${first_hash}" = "${second_hash}"', ci_workflow)
+        self.assertIn("packages/contracts/examples/canonical-v1.json", ci_workflow)
+        self.assertIn("actions/upload-artifact@v7", ci_workflow)
+        self.assertIn("actions/download-artifact@v8", ci_workflow)
+        self.assertIn("sha256sum -c canonical-v1.json.sha256", ci_workflow)
+        self.assertIn("retention-days: 1", ci_workflow)
+        self.assertNotIn("${{ github.workspace }}", ci_workflow)
 
     def test_legacy_facades_keep_public_entrypoints(self):
         self.assertIs(db.connect, sqlite_storage.connect)

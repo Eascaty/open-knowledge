@@ -72,6 +72,28 @@ class SqliteKnowledgeImportServiceTest {
     }
 
     @Test
+    void importsIntoSchemaV2WithoutChangingSchemaVersion() throws Exception {
+        try (Connection connection = connect(); Statement statement = connection.createStatement()) {
+            statement.executeUpdate("UPDATE metadata SET value='2' WHERE key='schema_version'");
+        }
+        Path input = tempDir.resolve("schema-v2.md");
+        Files.writeString(input, "schema v2", StandardCharsets.UTF_8);
+
+        KnowledgeImportResult result = service.importFile(input);
+
+        assertThat(result.duplicate()).isFalse();
+        try (Connection connection = connect(); Statement statement = connection.createStatement()) {
+            assertThat(singleLong(statement, "SELECT COUNT(*) FROM sources")).isEqualTo(1);
+            assertThat(singleLong(statement, "SELECT COUNT(*) FROM jobs")).isEqualTo(1);
+            try (ResultSet schema = statement.executeQuery(
+                    "SELECT value FROM metadata WHERE key='schema_version'")) {
+                assertThat(schema.next()).isTrue();
+                assertThat(schema.getInt(1)).isEqualTo(2);
+            }
+        }
+    }
+
+    @Test
     void repeatedContentIsIdempotentAndRepairsMissingRawWithoutNewRows() throws Exception {
         Path firstInput = tempDir.resolve("first.md");
         Path renamedInput = tempDir.resolve("renamed.md");
@@ -167,7 +189,8 @@ class SqliteKnowledgeImportServiceTest {
     }
 
     @Test
-    void validatesConfigurationAndSchemaWithoutImplicitMigration() throws Exception {
+    void validatesConfigurationAndRejectsUnsupportedSchemaWithoutImplicitMigration()
+            throws Exception {
         assertThatThrownBy(() -> new SqliteKnowledgeImportService(
                 projectRoot, tempDir.resolve("outside.sqlite3"), rawRoot, 1, 3))
                 .isInstanceOf(KnowledgeImportException.class)
@@ -186,13 +209,34 @@ class SqliteKnowledgeImportServiceTest {
                 .hasMessageContaining("尝试次数");
 
         try (Connection connection = connect(); Statement statement = connection.createStatement()) {
-            statement.executeUpdate("UPDATE metadata SET value='2' WHERE key='schema_version'");
+            statement.executeUpdate("UPDATE metadata SET value='3' WHERE key='schema_version'");
         }
         Path input = tempDir.resolve("schema.md");
         Files.writeString(input, "schema", StandardCharsets.UTF_8);
         assertThatThrownBy(() -> service.importFile(input))
                 .isInstanceOf(KnowledgeImportException.class)
-                .hasMessageContaining("schema v1");
+                .hasMessageContaining("schema v1 和 v2");
+        assertThat(Files.exists(rawRoot)).isFalse();
+    }
+
+    @Test
+    void rejectsMissingAndNonNumericSchemaVersionsWithoutWritingRaw() throws Exception {
+        Path input = tempDir.resolve("invalid-schema.md");
+        Files.writeString(input, "schema", StandardCharsets.UTF_8);
+        try (Connection connection = connect(); Statement statement = connection.createStatement()) {
+            statement.executeUpdate("DELETE FROM metadata WHERE key='schema_version'");
+        }
+
+        assertThatThrownBy(() -> service.importFile(input))
+                .isInstanceOf(KnowledgeImportException.class)
+                .hasMessageContaining("schema v1 和 v2");
+
+        try (Connection connection = connect(); Statement statement = connection.createStatement()) {
+            statement.executeUpdate("INSERT INTO metadata VALUES ('schema_version', 'invalid')");
+        }
+        assertThatThrownBy(() -> service.importFile(input))
+                .isInstanceOf(KnowledgeImportException.class)
+                .hasMessageContaining("schema v1 和 v2");
         assertThat(Files.exists(rawRoot)).isFalse();
     }
 

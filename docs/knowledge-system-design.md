@@ -2,7 +2,7 @@
 
 > 状态：活文档  
 > 版本：0.4.0
-> 更新时间：2026-08-23（Asia/Shanghai）
+> 更新时间：2026-08-27（Asia/Shanghai）
 > 项目根目录：`$HOME/AI/knowledge`
 
 ## 1. 目标
@@ -23,7 +23,7 @@
 
 网站已经发布的版本由云端静态托管，因此 Mac 关机后仍然可以打开；Mac 只负责处理新资料和发布新版本。
 
-实现状态：本地入库、分类、搜索、知识图、静态站、检查和发布适配代码已完成；项目内本地知识管家可常驻监听收件箱、自动运行全流水线并持续提供网站；Java 21 只读领域 API 的 J1 与中文全文搜索 J2 也已完成本地实现。
+实现状态：本地入库、长文拆卡、分类、搜索、知识图、静态站、检查、备份恢复演练和发布适配代码已完成；项目内本地知识管家提供网页拖放投放、逐文件进度、收件箱监听、全流水线自动运行和持续网站服务；SQLite 写模型为 schema v2，Java 21 只读 API 兼容 v1/v2。
 虚构公开资料已经通过 GitHub Pages 提供在线 Demo；真实私密知识的线上地址仍需用户以后登录 Cloudflare 并启用 Access。本地默认零网络请求。
 
 ## 2. 当前范围
@@ -43,6 +43,9 @@
 - 私密/公开静态网站
 - 自动构建、检查与安全回滚
 - 项目内单实例后台监听、首次等待页和双击启动入口
+- 长 Markdown 二级标题拆卡、独立分类和可追溯原文行号
+- 批量虚构验收、显式数据库迁移与非破坏性恢复演练
+- 本机网页拖放投放、刷新后进度恢复和完成后定位知识
 
 ### 暂缓
 
@@ -97,7 +100,7 @@
 
 - 一级模块数量不设上限。
 - 树深度不设固定上限。
-- 一份资料只有一个主路径。
+- 每张知识卡只有一个主路径；一份原始来源可以拆成多张分别分类的卡。
 - 一级至三级默认由用户定义并锁定。
 - AI 只在允许层级以下增加子节点。
 - 用户定义的专业链路优先于通用语义判断。
@@ -124,9 +127,11 @@ INBOX
   ↓
 RECEIVED
   ↓
+DEDUPED
+  ↓
 EXTRACTED
   ↓
-DEDUPED
+CARDS
   ↓
 CLASSIFIED
   ↓
@@ -148,8 +153,19 @@ PUBLISHED
 - 收件箱指纹包含相对路径、大小和修改时间；文件稳定3秒后才触发，避免复制到一半就读取。
 - 首次尚未生成站点时返回自动刷新的等待页；成功后继续提供正式网站。
 - 处理失败时保留上一版正常网站并按间隔重试，不用失败产物覆盖成功版本。
+- 发布完成以数据库实际 `queued/retry/running` 数量为准；达到单轮任务上限时继续后续轮次，不能提前记录成功指纹。
+- 单条终态失败进入隔离区；只要队列已排空且候选 Gate/Health 通过，同批正常资料仍可发布，管理器显示 `degraded`。
 - 完整异常只进入 Git 忽略的私密日志；网页状态接口移除控制令牌、绝对路径和错误原文。
 - 停止操作必须携带匹配实例的本地控制令牌，不根据端口盲目终止其他程序。
+
+### 4.1.1 网页投放
+
+- 只有网站由本机知识管家提供且能力握手严格通过时，网页才显示“投放资料”；GitHub Pages 等纯静态站保持只读和隐藏。
+- 浏览器一次上传一个原始二进制文件，最多并行两个；单文件上限取流水线配置和64 MiB中的较小值。
+- 上传正文先流式写入 `workspace/data/uploads/staging/`，校验长度并 `fsync` 后，再把全新 UUID 目录原子移动到 `workspace/inbox/files/`；监听器不会看到半文件，同名资料也不会互相覆盖。
+- 每份上传按内容哈希关联 SQLite 中的 source/document，状态依次为 `queued → processing → completed`；可重试失败会继续轮询，成功后返回对应文档 ID 并打开知识页。
+- 浏览器只在 `sessionStorage` 保存不含令牌的投放回执；刷新不会丢失进度，知识管家重启会把未完成的 `processing` 恢复为 `queued`。
+- 网页会话令牌只存在于管理器内存，重启即轮换；它不复用停止服务的控制令牌，也不写日志、状态文件或网站产物。
 
 ### 4.2 接收
 
@@ -168,15 +184,9 @@ PUBLISHED
 
 ### 4.4 解析
 
-候选组件：
+当前实现使用 Python 标准库解析文本、代码、HTML 与 DOCX；DOCX 设置解压大小和压缩比上限。文本型 PDF 可选调用本机 `pdftotext`，扫描 PDF、OCR 与音视频仍属于后续输入适配器。解析后统一生成标准 Markdown 和 JSON 元数据。
 
-- HTML：Trafilatura
-- Office：MarkItDown
-- 普通 PDF：pdfplumber
-- 扫描 PDF：OCRmyPDF + Tesseract
-- 音视频（后续）：ffmpeg + whisper.cpp
-
-解析后统一生成标准 Markdown 和 JSON 元数据。
+较长的 `.md/.markdown` 在达到固定长度和二级标题数量阈值后，由 `markdown-h2-v1` 确定性拆成知识卡。拆分忽略 YAML frontmatter 与代码围栏中的伪标题，限制最大卡片数，小节过短时合并；原始 raw 永不改写。每张卡记录 `section_index`、`heading_path`、原文起止行、正文 SHA-256 与拆分器版本。
 
 ### 4.5 去重
 
@@ -212,7 +222,7 @@ PUBLISHED
 
 ### 4.7 知识生成
 
-每份资料至少生成：
+每份来源可以生成一张或多张知识卡；每张卡至少生成：
 
 - 来源笔记
 - 摘要
@@ -274,9 +284,9 @@ AI 输出默认不是事实。状态包括：
 
 ### 5.2 本地知识管家边界
 
-`apps/pipeline/src/knowledge_os/local_manager.py` 负责收件箱监听、脱敏状态、站点服务和安全停止；`local_manager_cli.py` 负责用户命令和后台进程生命周期。两者只编排现有 `run_full_pipeline`，不复制入库、分类或建站逻辑。
+`apps/pipeline/src/knowledge_os/local_manager.py` 负责收件箱监听、逐文件处理关联、脱敏状态和安全停止；`local_http.py` 提供回环地址上的静态站点及网页投放控制面；`local_inbox.py` 负责大小、文件名、类型、并发、私密暂存和原子发布；`local_manager_cli.py` 负责用户命令和后台进程生命周期。它们只编排现有 `run_full_pipeline`，不复制入库、分类或建站逻辑。
 
-运行状态和日志分别位于 `workspace/data/state/local-manager.json` 与 `workspace/data/logs/local-manager.log`，都属于私密工作区。状态文件权限尽量收紧为当前用户可读写；HTTP 状态响应使用显式字段白名单。知识网站和控制接口只在本机回环地址提供，端口被其他程序占用时拒绝接管；静态文件解析后必须仍位于生成站点目录内，符号链接不能借此读取项目其他文件。
+运行状态和日志分别位于 `workspace/data/state/local-manager.json` 与 `workspace/data/logs/local-manager.log`，都属于私密工作区。状态文件权限尽量收紧为当前用户可读写；HTTP 状态响应使用显式字段白名单。知识网站和控制接口只在本机回环地址提供，严格校验 `Host`、浏览器 `Origin` 与临时会话令牌，不提供 CORS；全部响应禁止 iframe，并对管理接口和构建版本禁用浏览器/Service Worker 缓存。端口被其他程序占用时拒绝接管；静态文件解析后必须仍位于生成站点目录内，符号链接不能借此读取项目其他文件。
 
 本功能不安装系统服务、不修改项目外目录，也不依赖 Docker、Node、第三方 Python 包或外部账号。电脑重启后重新双击项目入口即可；未来若用户明确要求开机自启，再单独启用项目已有的可选 launchd 方案。
 
@@ -285,12 +295,13 @@ AI 输出默认不是事实。状态包括：
 `apps/api/` 的 HTTP 服务是现有 Python 流水线的增量消费者；可选 Java CLI 只承担受限的离线文件入队：
 
 ```text
-Python 主流水线 ───────→ SQLite schema v1 ← Java 21 只读 API
+Python 主流水线 ───────→ SQLite schema v2 ← Java 21 只读 API
        ↑                         ↑                ↓
        └──任务处理/分类/发布      └── Java 离线导入  仅查询 public
 ```
 
 - Java HTTP 服务使用 SQLite 只读连接，不迁移、不建表、不修改任务状态。
+- Java 读取和离线入队显式兼容 SQLite schema v1/v2；未知、缺失或非数字版本稳定拒绝。SQLite 版本与 canonical/OpenAPI v1 是彼此独立的版本边界。
 - Java 离线导入只创建 source、初始 extract 任务和审计事件；不执行后续任务，不开放网络写接口。
 - Python 与 Java 写入使用同一个 POSIX 项目锁；Java 单文件导入失败时回滚 SQLite 并清理本次创建的 raw。
 - `/api/v1` 响应显式携带 API 版本。
@@ -308,26 +319,26 @@ Python 主流水线 ───────→ SQLite schema v1 ← Java 21 只读
 - `packages/contracts/openapi.yaml` 定义 Java 只读 HTTP API v1，作为 Web 联机模式与未来 App 的接口边界。
 - Python 与 Java 契约测试共用 `packages/contracts/examples/canonical-v1.json`，样例只含固定虚构内容。
 - v1 只允许增加可选字段；删除、改名或改变字段语义必须新增契约主版本。
+- canonical v1 的知识条目可选携带 `section_index`、`heading_path`、`source_line_start/end`、`body_sha256` 和 `splitter_version`；旧客户端可忽略这些增量字段。
 
 ### 5.5 SQLite 主要表
 
-- `taxonomy_nodes`
-- `taxonomy_aliases`
+- `metadata`
+- `nodes`
 - `sources`
-- `source_versions`
 - `documents`
-- `chunks`
 - `placements`
-- `entities`
 - `relations`
 - `jobs`
-- `runs`
-- `artifacts`
-- `deployments`
+- `events`
+- `documents_fts`
+
+schema v2 将不可变 `sources` 与知识卡 `documents` 建模为 1:N；每张卡仍只有一个主 `placement`，关系和 FTS 均以 document ID 为粒度。未拆分资料及首卡继续使用原 source ID，后续卡使用来源哈希、拆分器版本、序号、标题路径和正文哈希生成稳定 ID。已有 v1 数据库不会隐式升级，必须在项目锁内先创建一致性快照，再运行显式事务迁移；旧 Markdown 来源迁移后重新进入 extract 队列。
 
 ### 5.6 Web 与未来 App 适配边界
 
 - `apps/web/src/data-source.js` 提供静态构建和 HTTP API v1 两种读取适配器；现有 PWA 默认使用静态模式，保持离线优先和零在线服务成本。
+- `apps/web/src/local-ingest.js` 是独立的本机写入控制面；它只在严格能力探测成功后启用，不能把上传职责塞入只读 `data-source.js`。
 - Java HTTP 控制器只依赖应用服务，应用服务再调用只读仓储；客户端不得直接绑定 SQLite schema。
 - 未来原生 App 复用 OpenAPI v1，并在客户端适配层实现鉴权、缓存和同步，不复制 Python 处理逻辑。
 - 在目标平台、离线编辑和同步策略明确前不创建空移动端工程，以免过早锁定技术栈。
@@ -338,7 +349,7 @@ Python 主流水线 ───────→ SQLite schema v1 ← Java 21 只读
 - `.dockerignore` 从构建上下文排除 `workspace/`、导出物、站点生成物和 SQLite 文件；真实知识不得进入镜像层。
 - Compose 要求显式提供经过一致性验证的 SQLite 快照，只读挂载；容器根文件系统只读、移除全部 Linux capabilities，并启用 `no-new-privileges`。SQLite JDBC 原生库只允许解压到16MB、归 UID 10001 独占的临时挂载，普通 `/tmp` 不放宽执行权限。
 - API 通过 SQLite URI `mode=ro&immutable=1` 打开已验证快照，不创建 WAL/SHM sidecar，也不把正在写入的实时数据库当成不可变文件；部署前必须先运行一致性快照流程。
-- `/actuator/health/liveness` 只表示进程可响应；`/actuator/health/readiness` 额外检查 SQLite 可读且 schema 为 v1。除 health 外不暴露管理端点，也不展示健康详情。
+- `/actuator/health/liveness` 只表示进程可响应；`/actuator/health/readiness` 额外检查 SQLite 可读且 schema 为 v1 或 v2。除 health 外不暴露管理端点，也不展示健康详情。
 - 数据库健康失败只在服务端记录脱敏原因类别、SQL state 与错误码，不记录数据库路径、查询内容或知识数据。
 - 默认端口只绑定 `127.0.0.1`。容器化只是可重复部署单元，不等于公网安全方案；远程访问前必须另行设计 TLS、认证、授权和同步冲突策略。
 
@@ -366,7 +377,7 @@ knowledge/
 
 约束：
 
-- 旧脚本入口保持可用，SQLite schema v1、知识 ID、分类 ID 和原始资料哈希不变。
+- 旧脚本入口保持可用；SQLite schema v2 保留未拆分资料/首卡 ID、分类 ID 和原始资料哈希，新增卡使用稳定派生 ID。
 - `workspace/` 除说明文件外整体忽略；原始资料只追加。
 - `apps/web/src/` 是手写网站源码唯一位置，`workspace/site/` 只是派生产物。
 - Python 顶层旧导入由兼容 facade 保留；实现模块以600行为审查上限。
@@ -521,6 +532,9 @@ raw_auto_delete: false
 - 单条失败不影响其他任务。
 - 每日生成健康报告。
 - 数据库创建一致性快照。
+- v1→v2 只允许通过 `scripts/migrate` 显式迁移，迁移前自动快照并在提交前检查完整性与外键。
+- `scripts/restore-drill` 只把快照恢复到临时候选库并核对哈希、schema、关键表与行数，绝不覆盖正式数据库。
+- `scripts/acceptance` 只使用固定虚构资料验证嵌套输入、重复、长文拆卡、队列续跑、失败隔离、Gate/Health 与零网络。
 - 依赖与模型不自动升级。
 
 ## 11. 实施阶段
@@ -538,6 +552,7 @@ raw_auto_delete: false
 
 - Ollama
 - 结构化摘要
+- 长 Markdown 知识卡拆分
 - 逐级分类
 - 证据关系
 - FTS5 搜索
@@ -581,6 +596,9 @@ raw_auto_delete: false
 8. 未标记 `public` 的内容不进入公开构建。
 9. 任务中断后可以继续。
 10. 里程碑更新状态；真实部署、迁移和恢复写入操作日志。
+11. 长 Markdown 可以生成多张独立分类的知识卡，且原始文件字节不变。
+12. 单条坏资料不阻塞同批正常资料，待处理任务为零前不替换正式站。
+13. 备份能够在隔离候选库中恢复验证，错误哈希或损坏快照被拒绝。
 
 ## 13. 已知边界
 

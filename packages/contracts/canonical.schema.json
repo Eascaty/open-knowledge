@@ -141,6 +141,15 @@
         "path": { "$ref": "#/$defs/stringList" },
         "visibility": { "$ref": "#/$defs/visibility" },
         "status": { "type": "string" },
+        "section_index": { "type": "integer", "minimum": 0 },
+        "heading_path": { "$ref": "#/$defs/stringList" },
+        "source_line_start": { "type": "integer", "minimum": 1 },
+        "source_line_end": { "type": "integer", "minimum": 1 },
+        "body_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "splitter_version": { "type": "string", "minLength": 1 },
         "source": { "$ref": "#/$defs/source" },
         "evidence": {
           "type": "array",

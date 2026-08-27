@@ -120,6 +120,12 @@ def _headers(private: bool, noindex: bool) -> str:
 /data/*
   Cache-Control: {data_cache}
 
+/build-meta.json
+  Cache-Control: private, no-store, max-age=0
+
+/__knowledge/*
+  Cache-Control: private, no-store, max-age=0
+
 /assets/*
   Cache-Control: public, max-age=300, must-revalidate
 
@@ -135,6 +141,8 @@ def _service_worker(cache_version: str, private: bool) -> str:
         "./assets/styles.css",
         "./assets/data-source.js",
         "./assets/app.js",
+        "./assets/local-ingest.css",
+        "./assets/local-ingest.js",
         "./manifest.webmanifest",
         "./offline.html",
         "./icons/icon-192.png",
@@ -148,14 +156,52 @@ def _service_worker(cache_version: str, private: bool) -> str:
     ]
     cache_files = shell_files if private else shell_files + public_data
     cache_literal = json.dumps(cache_files, ensure_ascii=False)
+    cache_name = (
+        "knowledge-os-private-shell-v3-{}".format(cache_version)
+        if private
+        else "knowledge-os-{}".format(cache_version)
+    )
     data_policy = """
-  if (url.pathname.includes("/data/")) {
+  if (pathname.includes("/data/")) {
     event.respondWith(fetch(event.request, { cache: "no-store" }));
     return;
   }
 """ if private else ""
-    return f"""const CACHE_NAME = "knowledge-os-{cache_version}";
+    runtime_strategy = """
+  event.respondWith(
+    fetch(event.request).catch(() =>
+      caches.open(CACHE_NAME).then((cache) =>
+        cache.match(event.request).then((cached) =>
+          cached || cache.match("./offline.html")
+        )
+      )
+    )
+  );
+""" if private else """
+  event.respondWith(
+    fetch(event.request)
+      .then((response) => {
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        }
+        return response;
+      })
+      .catch(() => caches.open(CACHE_NAME).then((cache) =>
+        cache.match(event.request).then((cached) => cached || cache.match("./offline.html"))
+      ))
+  );
+"""
+    return f"""const CACHE_NAME = "{cache_name}";
 const CACHE_FILES = {cache_literal};
+
+function decodedPathname(url) {{
+  try {{
+    return decodeURIComponent(url.pathname);
+  }} catch (_error) {{
+    return url.pathname;
+  }}
+}}
 
 self.addEventListener("install", (event) => {{
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(CACHE_FILES)));
@@ -174,18 +220,13 @@ self.addEventListener("fetch", (event) => {{
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
+  const pathname = decodedPathname(url).toLocaleLowerCase();
+  if (pathname.includes("/__knowledge/") || pathname.endsWith("/build-meta.json")) {{
+    event.respondWith(fetch(event.request, {{ cache: "no-store" }}));
+    return;
+  }}
 {data_policy}
-  event.respondWith(
-    fetch(event.request)
-      .then((response) => {{
-        if (response.ok) {{
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-        }}
-        return response;
-      }})
-      .catch(() => caches.match(event.request).then((cached) => cached || caches.match("./offline.html")))
-  );
+{runtime_strategy}
 }});
 """
 

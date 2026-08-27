@@ -14,10 +14,42 @@ from typing import Union
 
 from knowledge_os.contracts import validate_canonical_contract
 
-from .model import ASSET_DIR, REQUIRED_ASSETS, SCHEMA_VERSION, BuildResult, SiteDataError
+from .model import (
+    ASSET_DIR,
+    REQUIRED_ASSETS,
+    SCHEMA_VERSION,
+    BuildResult,
+    SiteDataError,
+)
 from .normalize import DataInput, normalize_site_data
 from .payloads import _graph_payload, _search_payload, _taxonomy_payload
-from .render import _headers, _json_bytes, _make_icon, _manifest, _render_index, _service_worker, _write_json
+from .render import (
+    _headers,
+    _json_bytes,
+    _make_icon,
+    _manifest,
+    _render_index,
+    _service_worker,
+    _write_json,
+)
+
+
+_CACHE_POLICY_VERSION = b"knowledge-os-shell-v2\0"
+
+
+def _cache_version(canonical_bytes: bytes) -> str:
+    """Fingerprint knowledge plus every checked-in browser shell source."""
+
+    digest = hashlib.sha256(_CACHE_POLICY_VERSION)
+    digest.update(canonical_bytes)
+    for name in (*REQUIRED_ASSETS, "offline.html"):
+        payload = (ASSET_DIR / name).read_bytes()
+        digest.update(name.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(len(payload).to_bytes(8, "big"))
+        digest.update(payload)
+    return digest.hexdigest()[:16]
+
 
 def _validate_build(directory: Path) -> None:
     required = [
@@ -26,6 +58,8 @@ def _validate_build(directory: Path) -> None:
         "assets/data-source.js",
         "assets/app.js",
         "assets/styles.css",
+        "assets/local-ingest.js",
+        "assets/local-ingest.css",
         "manifest.webmanifest",
         "service-worker.js",
         "robots.txt",
@@ -96,6 +130,7 @@ def build_site(
 
     canonical_bytes = _json_bytes(data)
     content_digest = hashlib.sha256(canonical_bytes).hexdigest()
+    cache_version = _cache_version(canonical_bytes)
     temp = Path(
         tempfile.mkdtemp(prefix=f".{output.name}-build-", dir=output.parent)
     )
@@ -116,6 +151,12 @@ def build_site(
         )
         shutil.copyfile(ASSET_DIR / "app.js", temp / "assets" / "app.js")
         shutil.copyfile(ASSET_DIR / "styles.css", temp / "assets" / "styles.css")
+        shutil.copyfile(
+            ASSET_DIR / "local-ingest.js", temp / "assets" / "local-ingest.js"
+        )
+        shutil.copyfile(
+            ASSET_DIR / "local-ingest.css", temp / "assets" / "local-ingest.css"
+        )
         (temp / "offline.html").write_text(
             _render_index(
                 (ASSET_DIR / "offline.html").read_text(encoding="utf-8"),
@@ -125,7 +166,7 @@ def build_site(
             encoding="utf-8",
         )
         (temp / "service-worker.js").write_text(
-            _service_worker(content_digest[:16], visibility == "private"),
+            _service_worker(cache_version, visibility == "private"),
             encoding="utf-8",
         )
         _write_json(temp / "manifest.webmanifest", _manifest(data))
@@ -151,6 +192,7 @@ def build_site(
             {
                 "schema_version": SCHEMA_VERSION,
                 "content_digest": content_digest,
+                "cache_version": cache_version,
                 "generated_at": data["generated_at"],
                 "visibility": visibility,
                 "allow_indexing": allow_indexing,

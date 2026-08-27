@@ -108,6 +108,11 @@ DEFAULT_RUNTIME: Dict[str, Any] = {
         "retry_base_seconds": 30,
         "max_file_mb": 512,
         "stale_job_minutes": 30,
+        "split_markdown_headings": True,
+        "split_min_chars": 1200,
+        "split_min_sections": 2,
+        "split_min_section_chars": 120,
+        "split_max_sections": 24,
     },
     "site": {
         "title": "我的知识体系",

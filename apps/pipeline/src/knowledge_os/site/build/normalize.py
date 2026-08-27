@@ -29,6 +29,16 @@ def _as_text_list(value: Any) -> list[str]:
     return [text for item in value if (text := _as_text(item))]
 
 
+def _as_optional_integer(value: Any, *, minimum: int) -> Optional[int]:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        integer = int(value)
+    except (TypeError, ValueError):
+        return None
+    return integer if integer >= minimum else None
+
+
 DataInput = Union[Mapping[str, Any], str, os.PathLike]
 
 
@@ -389,6 +399,32 @@ def normalize_site_data(
             "evidence": _normalize_evidence(raw_document.get("evidence")),
             "updated_at": _as_text(raw_document.get("updated_at")),
         }
+        section_index = _as_optional_integer(
+            raw_document.get("section_index"), minimum=0
+        )
+        source_line_start = _as_optional_integer(
+            raw_document.get("source_line_start"), minimum=1
+        )
+        source_line_end = _as_optional_integer(
+            raw_document.get("source_line_end"), minimum=1
+        )
+        if section_index is not None:
+            document["section_index"] = section_index
+        heading_path = _as_text_list(raw_document.get("heading_path"))
+        if heading_path:
+            document["heading_path"] = heading_path
+        if source_line_start is not None:
+            document["source_line_start"] = source_line_start
+        if source_line_end is not None and (
+            source_line_start is None or source_line_end >= source_line_start
+        ):
+            document["source_line_end"] = source_line_end
+        body_sha256 = _as_text(raw_document.get("body_sha256")).lower()
+        if re.fullmatch(r"[0-9a-f]{64}", body_sha256):
+            document["body_sha256"] = body_sha256
+        splitter_version = _as_text(raw_document.get("splitter_version"))
+        if splitter_version:
+            document["splitter_version"] = splitter_version
         documents.append(document)
         document_relations = raw_document.get("relations", [])
         if isinstance(document_relations, list):

@@ -58,16 +58,20 @@ def sync_taxonomy(
     uncertain_id = str(taxonomy["rules"]["uncertain_destination"])
     orphaned = connection.execute(
         """
-        SELECT p.document_id
+        SELECT p.document_id, d.source_id
         FROM placements p
+        JOIN documents d ON d.id=p.document_id
         JOIN nodes n ON n.id=p.node_id
         WHERE n.active=0
         ORDER BY p.document_id
         """
     ).fetchall()
     now = utc_now()
+    affected_sources = set()
     for row in orphaned:
         document_id = str(row["document_id"])
+        source_id = str(row["source_id"])
+        affected_sources.add(source_id)
         connection.execute(
             """
             UPDATE placements
@@ -80,9 +84,16 @@ def sync_taxonomy(
         connection.execute(
             "DELETE FROM documents_fts WHERE document_id=?", (document_id,)
         )
+        add_event(
+            connection,
+            "placement_retired",
+            source_id=source_id,
+            details={"document_id": document_id, "destination": uncertain_id},
+        )
+    for source_id in sorted(affected_sources):
         connection.execute(
             "UPDATE sources SET status='queued', last_error=NULL WHERE id=?",
-            (document_id,),
+            (source_id,),
         )
         for stage in ("enrich", "index"):
             connection.execute(
@@ -95,12 +106,6 @@ def sync_taxonomy(
                     status='queued', attempts=0, available_at=excluded.available_at,
                     last_error=NULL, updated_at=excluded.updated_at
                 """,
-                (document_id, stage, now, now, now),
+                (source_id, stage, now, now, now),
             )
-        add_event(
-            connection,
-            "placement_retired",
-            source_id=document_id,
-            details={"destination": uncertain_id},
-        )
     connection.commit()

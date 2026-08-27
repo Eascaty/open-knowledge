@@ -50,6 +50,47 @@ class SqliteKnowledgeQueryRepositoryTest {
     }
 
     @Test
+    void reportsSchemaV2DatabaseAsReady() throws Exception {
+        setSchemaVersion(2);
+
+        HealthStatus health = repository.health();
+
+        assertThat(health.status()).isEqualTo("UP");
+        assertThat(health.schemaVersion()).isEqualTo(2);
+    }
+
+    @Test
+    void reportsUnsupportedSchemaAsNotReady() throws Exception {
+        setSchemaVersion(3);
+
+        HealthStatus health = repository.health();
+
+        assertThat(health.status()).isEqualTo("DOWN");
+        assertThat(health.schemaVersion()).isEqualTo(3);
+    }
+
+    @Test
+    void reportsMissingAndNonNumericSchemaAsNotReady() throws Exception {
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + database);
+             Statement statement = connection.createStatement()) {
+            statement.executeUpdate("DELETE FROM metadata WHERE key='schema_version'");
+        }
+        assertThat(repository.health()).satisfies(health -> {
+            assertThat(health.status()).isEqualTo("DOWN");
+            assertThat(health.schemaVersion()).isNull();
+        });
+
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + database);
+             Statement statement = connection.createStatement()) {
+            statement.executeUpdate("INSERT INTO metadata VALUES ('schema_version', 'invalid')");
+        }
+        assertThat(repository.health()).satisfies(health -> {
+            assertThat(health.status()).isEqualTo("DOWN");
+            assertThat(health.schemaVersion()).isNull();
+        });
+    }
+
+    @Test
     void opensWalDatabaseAsImmutableReadOnlyWithoutSidecarWrites() throws Exception {
         Files.deleteIfExists(database.resolveSibling(database.getFileName() + "-wal"));
         Files.deleteIfExists(database.resolveSibling(database.getFileName() + "-shm"));
@@ -123,6 +164,14 @@ class SqliteKnowledgeQueryRepositoryTest {
                 hit -> assertThat(hit.snippet()).contains("[[G1]]"));
         assertThat(repository.searchDocuments("\" OR private", 0, 20).total()).isZero();
         assertThat(repository.searchDocuments("  ", 0, 20).total()).isZero();
+    }
+
+    private void setSchemaVersion(int version) throws Exception {
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + database);
+             Statement statement = connection.createStatement()) {
+            statement.executeUpdate(
+                    "UPDATE metadata SET value='" + version + "' WHERE key='schema_version'");
+        }
     }
 
     private void createDatabase() throws Exception {

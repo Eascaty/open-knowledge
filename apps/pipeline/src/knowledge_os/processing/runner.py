@@ -2,16 +2,23 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Mapping
 
 from .. import db
 from ..ai import Adapter
 from ..config import ProjectPaths, atomic_write_text
-from .artifacts import _quarantine, _upsert_relations, _write_knowledge_note
+from .artifacts import (
+    _quarantine,
+    _remove_generated_knowledge_notes,
+    _upsert_relations,
+    _write_knowledge_note,
+)
 from .classification import classify_document
 from .extraction import ExtractionError, _normalized_markdown, extract_source
+from .heading_cards import document_id_for_card, split_document
+
 
 @dataclass(frozen=True)
 class RunSummary:
@@ -19,6 +26,7 @@ class RunSummary:
     completed: int
     retried: int
     failed: int
+    pending: int = 0
 
 def _process_extract(
     connection: Any,
@@ -39,34 +47,90 @@ def _process_extract(
     title, body = extract_source(raw_path, str(source["original_name"]))
     if not body.strip():
         raise ExtractionError("source yielded an empty document")
-    normalized_path = (
-        paths.normalized_dir
-        / str(source["sha256"])[:2]
-        / f"{source['sha256']}.md"
-    )
-    markdown = _normalized_markdown(
-        source_id=str(source["id"]),
-        sha256=str(source["sha256"]),
+
+    cards = split_document(
         title=title,
-        original_name=str(source["original_name"]),
-        imported_at=str(source["imported_at"]),
         body=body,
+        original_name=str(source["original_name"]),
+        runtime=runtime,
     )
-    atomic_write_text(normalized_path, markdown)
-    relative_normalized = normalized_path.relative_to(paths.root).as_posix()
-    db.upsert_document(
-        connection,
-        {
-            "id": source["id"],
-            "source_id": source["id"],
-            "title": title,
-            "normalized_path": relative_normalized,
-            "body": body,
-            "visibility": "private",
-            "model_name": "pending",
-            "prompt_version": "pending",
-        },
+    records = []
+    current_paths = set()
+    for card in cards:
+        document_id = document_id_for_card(
+            str(source["id"]), str(source["sha256"]), card
+        )
+        filename = (
+            f"{source['sha256']}.md"
+            if card.section_index == 0
+            else "{}-{:03d}-{}.md".format(
+                source["sha256"], card.section_index, document_id[-12:]
+            )
+        )
+        normalized_path = (
+            paths.normalized_dir / str(source["sha256"])[:2] / filename
+        )
+        markdown = _normalized_markdown(
+            document_id=document_id,
+            source_id=str(source["id"]),
+            sha256=str(source["sha256"]),
+            title=card.title,
+            original_name=str(source["original_name"]),
+            imported_at=str(source["imported_at"]),
+            body=card.body,
+            section_index=card.section_index,
+            heading_path=card.heading_path,
+            source_line_start=card.source_line_start,
+            source_line_end=card.source_line_end,
+            body_sha256=card.body_sha256,
+            splitter_version=card.splitter_version,
+        )
+        atomic_write_text(normalized_path, markdown)
+        relative_normalized = normalized_path.relative_to(paths.root).as_posix()
+        current_paths.add(relative_normalized)
+        records.append(
+            {
+                "id": document_id,
+                "source_id": source["id"],
+                "section_index": card.section_index,
+                "heading_path": list(card.heading_path),
+                "source_line_start": card.source_line_start,
+                "source_line_end": card.source_line_end,
+                "body_sha256": card.body_sha256,
+                "splitter_version": card.splitter_version,
+                "title": card.title,
+                "normalized_path": relative_normalized,
+                "body": card.body,
+                "visibility": "private",
+                "model_name": "pending",
+                "prompt_version": "pending",
+            }
+        )
+    stale_paths = db.replace_source_documents(
+        connection, str(source["id"]), records
     )
+    for stale_id, relative in stale_paths:
+        if relative in current_paths:
+            continue
+        stale_path = (paths.root / relative).resolve()
+        try:
+            stale_path.relative_to(paths.normalized_dir.resolve())
+        except ValueError:
+            continue
+        if stale_path.is_file() and not stale_path.is_symlink():
+            stale_path.unlink()
+        _remove_generated_knowledge_notes(paths, stale_id)
+    if len(cards) > 1:
+        db.add_event(
+            connection,
+            "source_split",
+            source_id=str(source["id"]),
+            details={
+                "documents": len(cards),
+                "splitter_version": cards[0].splitter_version,
+            },
+        )
+        connection.commit()
     db.enqueue_job(
         connection,
         str(source["id"]),
@@ -83,67 +147,86 @@ def _process_enrich(
     taxonomy: Mapping[str, Any],
     adapter: Adapter,
 ) -> None:
-    document = connection.execute(
-        "SELECT * FROM documents WHERE id=?", (source["id"],)
-    ).fetchone()
-    if document is None:
+    documents = db.documents_by_source(connection, str(source["id"]))
+    if not documents:
         raise ExtractionError("document was not extracted before enrichment")
-    extraction = adapter.extract(
-        title=str(document["title"]),
-        body=str(document["body"]),
-        taxonomy=taxonomy,
-    )
-    classification = classify_document(
-        title=str(document["title"]),
-        body=str(document["body"]),
-        extraction=extraction,
-        taxonomy=taxonomy,
-    )
-    db.update_document_enrichment(
-        connection,
-        str(document["id"]),
-        summary=extraction.summary,
-        key_points=extraction.key_points,
-        tags=extraction.tags,
-        model_name=extraction.model_name,
-        prompt_version=extraction.prompt_version,
-    )
-    db.place_document(
-        connection,
-        str(document["id"]),
-        classification.node_id,
-        classification.confidence,
-        classification.method,
-    )
-    _upsert_relations(connection, str(document["id"]), extraction.relations)
-    enriched_document = dict(document)
-    enriched_document.update(
-        {
-            "summary": extraction.summary,
-            "key_points": extraction.key_points,
-            "tags": extraction.tags,
-        }
-    )
-    vault_path = _write_knowledge_note(
-        paths,
-        source=source,
-        document=enriched_document,
-        extraction=extraction,
-        classification=classification,
-    )
-    db.add_event(
-        connection,
-        "knowledge_note_written",
-        source_id=str(source["id"]),
-        details={"path": vault_path, "node_id": classification.node_id},
-    )
-    connection.commit()
+    for document in documents:
+        heading_path = json.loads(str(document["heading_path_json"]))
+        analysis_title = (
+            " / ".join(str(value) for value in heading_path)
+            if heading_path
+            else str(document["title"])
+        )
+        extraction = adapter.extract(
+            title=analysis_title,
+            body=str(document["body"]),
+            taxonomy=taxonomy,
+        )
+        classification = classify_document(
+            title=analysis_title,
+            body=str(document["body"]),
+            extraction=extraction,
+            taxonomy=taxonomy,
+        )
+        db.update_document_enrichment(
+            connection,
+            str(document["id"]),
+            summary=extraction.summary,
+            key_points=extraction.key_points,
+            tags=extraction.tags,
+            model_name=extraction.model_name,
+            prompt_version=extraction.prompt_version,
+        )
+        db.place_document(
+            connection,
+            str(document["id"]),
+            classification.node_id,
+            classification.confidence,
+            classification.method,
+        )
+        _upsert_relations(connection, str(document["id"]), extraction.relations)
+        enriched_document = dict(document)
+        enriched_document.update(
+            {
+                "summary": extraction.summary,
+                "key_points": extraction.key_points,
+                "tags": extraction.tags,
+            }
+        )
+        vault_path = _write_knowledge_note(
+            paths,
+            source=source,
+            document=enriched_document,
+            extraction=extraction,
+            classification=classification,
+        )
+        db.add_event(
+            connection,
+            "knowledge_note_written",
+            source_id=str(source["id"]),
+            details={
+                "document_id": str(document["id"]),
+                "path": vault_path,
+                "node_id": classification.node_id,
+            },
+        )
+        connection.commit()
+    db.mark_source_status(connection, str(source["id"]), "classified")
     db.enqueue_job(
         connection,
         str(source["id"]),
         "index",
         max_attempts=int(runtime.get("pipeline", {}).get("max_attempts", 3)),
     )
+
+
+def _process_index(connection: Any, source: Mapping[str, Any]) -> None:
+    documents = db.documents_by_source(connection, str(source["id"]))
+    if not documents:
+        raise ExtractionError("source has no documents to index")
+    for document in documents:
+        db.index_document(connection, str(document["id"]))
+    db.mark_source_status(connection, str(source["id"]), "completed")
 
 
 def process_jobs(
@@ -185,7 +268,7 @@ def process_jobs(
                     connection, paths, source, runtime, taxonomy, adapter
                 )
             elif stage == "index":
-                db.index_document(connection, str(source["id"]))
+                _process_index(connection, source)
             else:
                 raise ExtractionError(f"unknown pipeline stage: {stage}")
             db.finish_job(connection, int(job["id"]))
@@ -207,6 +290,18 @@ def process_jobs(
                 )
             else:
                 retried += 1
+    pending_row = connection.execute(
+        """
+        SELECT COUNT(*)
+        FROM jobs
+        WHERE status IN ('queued', 'running', 'retry')
+        """
+    ).fetchone()
+    pending = int(pending_row[0]) if pending_row is not None else 0
     return RunSummary(
-        claimed=claimed, completed=completed, retried=retried, failed=failed
+        claimed=claimed,
+        completed=completed,
+        retried=retried,
+        failed=failed,
+        pending=pending,
     )

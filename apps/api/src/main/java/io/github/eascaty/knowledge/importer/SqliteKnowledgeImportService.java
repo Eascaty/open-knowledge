@@ -20,12 +20,13 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HexFormat;
 import java.util.Properties;
+import java.util.Set;
 import java.util.UUID;
 
 public class SqliteKnowledgeImportService {
 
     private static final int COPY_BUFFER_BYTES = 1024 * 1024;
-    private static final int EXPECTED_SCHEMA_VERSION = 1;
+    private static final Set<Integer> SUPPORTED_SCHEMA_VERSIONS = Set.of(1, 2);
 
     private final Path projectRoot;
     private final Path databasePath;
@@ -165,8 +166,17 @@ public class SqliteKnowledgeImportService {
         try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT value FROM metadata WHERE key='schema_version'");
              ResultSet result = statement.executeQuery()) {
-            if (!result.next() || result.getInt(1) != EXPECTED_SCHEMA_VERSION) {
-                throw new KnowledgeImportException("仅支持 SQLite schema v1，拒绝隐式迁移");
+            Integer schemaVersion = null;
+            if (result.next()) {
+                try {
+                    schemaVersion = Integer.valueOf(result.getString(1));
+                } catch (NumberFormatException ignored) {
+                    // Fall through to the same stable rejection used for unknown versions.
+                }
+            }
+            if (schemaVersion == null || !SUPPORTED_SCHEMA_VERSIONS.contains(schemaVersion)) {
+                throw new KnowledgeImportException(
+                        "仅支持 SQLite schema v1 和 v2，拒绝隐式迁移");
             }
         }
     }

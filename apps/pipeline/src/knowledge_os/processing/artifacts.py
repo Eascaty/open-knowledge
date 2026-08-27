@@ -21,6 +21,43 @@ def _safe_component(name: str) -> str:
     return (value or "未命名")[:100]
 
 
+def _remove_generated_knowledge_notes(
+    paths: ProjectPaths,
+    document_id: str,
+    *,
+    keep: Optional[Path] = None,
+) -> int:
+    """Remove obsolete generated notes without touching arbitrary Vault files."""
+
+    expected_id = "id: {}".format(json.dumps(document_id, ensure_ascii=False))
+    kept = keep.resolve() if keep is not None else None
+    vault_root = paths.vault_dir.resolve()
+    removed = 0
+    for candidate in paths.vault_dir.glob("**/资料/*.md"):
+        if candidate.is_symlink() or not candidate.is_file():
+            continue
+        try:
+            resolved = candidate.resolve()
+            resolved.relative_to(vault_root)
+            if kept is not None and resolved == kept:
+                continue
+            with candidate.open("r", encoding="utf-8") as handle:
+                prefix = handle.read(16384)
+        except (OSError, UnicodeError, ValueError):
+            continue
+        frontmatter = prefix.split("---", 2)
+        if (
+            len(frontmatter) < 3
+            or expected_id not in frontmatter[1].splitlines()
+            or "source_sha256:" not in frontmatter[1]
+            or "prompt_version:" not in frontmatter[1]
+        ):
+            continue
+        candidate.unlink()
+        removed += 1
+    return removed
+
+
 def _write_knowledge_note(
     paths: ProjectPaths,
     *,
@@ -35,10 +72,20 @@ def _write_knowledge_note(
     )
     filename = f"{_safe_component(str(document['title']))}-{str(document['id'])[-12:]}.md"
     output = directory / "资料" / filename
+    _remove_generated_knowledge_notes(
+        paths, str(document["id"]), keep=output
+    )
     metadata = {
+        "generated_by": "knowledge-os/card-v1",
         "id": document["id"],
         "source_id": source["id"],
         "source_sha256": source["sha256"],
+        "section_index": document.get("section_index", 0),
+        "heading_path": json.loads(document.get("heading_path_json", "[]")),
+        "source_line_start": document.get("source_line_start"),
+        "source_line_end": document.get("source_line_end"),
+        "body_sha256": document.get("body_sha256", ""),
+        "splitter_version": document.get("splitter_version", "single-v1"),
         "taxonomy_node_id": classification.node_id,
         "taxonomy_path": display_path,
         "classification_method": classification.method,
@@ -81,6 +128,14 @@ def _write_knowledge_note(
             f"- 原始文件：`{source['raw_path']}`",
             f"- SHA-256：`{source['sha256']}`",
             f"- 原始名称：{source['original_name']}",
+            "- 原文行号：{}".format(
+                "L{}-L{}".format(
+                    document.get("source_line_start"),
+                    document.get("source_line_end"),
+                )
+                if document.get("source_line_start") is not None
+                else "未记录"
+            ),
             "",
             "## 标准化正文",
             "",
@@ -309,6 +364,12 @@ def build_site_data(
             {
                 "id": row["id"],
                 "source_id": row["source_id"],
+                "section_index": row["section_index"],
+                "heading_path": json.loads(row["heading_path_json"]),
+                "source_line_start": row["source_line_start"],
+                "source_line_end": row["source_line_end"],
+                "body_sha256": row["body_sha256"],
+                "splitter_version": row["splitter_version"],
                 "title": row["title"],
                 "summary": row["summary"],
                 "content": row["body"],
@@ -325,7 +386,15 @@ def build_site_data(
                     {
                         "id": f"{row['id']}-source",
                         "excerpt": re.sub(r"\s+", " ", str(row["body"])).strip()[:500],
-                        "locator": row["original_name"],
+                        "locator": (
+                            "{}:L{}-L{}".format(
+                                row["original_name"],
+                                row["source_line_start"],
+                                row["source_line_end"],
+                            )
+                            if row["source_line_start"] is not None
+                            else row["original_name"]
+                        ),
                         "source_label": row["original_name"],
                     }
                 ],

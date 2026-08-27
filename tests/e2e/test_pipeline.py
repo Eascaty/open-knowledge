@@ -27,6 +27,10 @@ class FullPipelineTests(unittest.TestCase):
             self.assertEqual(result.documents, 3)
             self.assertTrue(result.gate_allowed)
             self.assertEqual(result.health_status, "PASS")
+            self.assertEqual(result.site_output, str(paths.site_dir / "dist"))
+            self.assertEqual(
+                list(paths.site_dir.glob(".dist-candidate-*")), []
+            )
             canonical = json.loads(
                 (paths.site_data_dir / "site-data.json").read_text(
                     encoding="utf-8"

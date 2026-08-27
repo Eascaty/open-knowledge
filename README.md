@@ -80,7 +80,7 @@ git clone https://github.com/Eascaty/personal-knowledge-os.git
 cd personal-knowledge-os
 ```
 
-### 3. 放入一份公开样例
+### 3. 准备一份资料
 
 仓库内已经提供三份虚构测试资料。你可以先复制一份到收件箱：
 
@@ -117,16 +117,18 @@ cp tests/fixtures/java_g1.md workspace/inbox/files/
 
 ### 5. 继续投入资料
 
-知识管家运行期间，只要继续把文件放进 `workspace/inbox/files/`，它就会在文件稳定后自动更新。知识网站固定访问 [http://127.0.0.1:8765](http://127.0.0.1:8765)；重复双击只会复用同一个后台实例，不会越开越多。
+知识管家运行期间，网页右上角会出现“投放资料”。把文件拖进去或点击选择，网页会显示接收和整理进度；完成后自动刷新并打开对应知识。也可以继续直接把文件放进 `workspace/inbox/files/`。
+
+知识网站固定访问 [http://127.0.0.1:8765](http://127.0.0.1:8765)；重复双击只会复用同一个后台实例，不会越开越多。GitHub Pages 等公开静态 Demo 没有本地写入能力，因此不会显示投放入口。
 
 ## 日常怎么使用
 
 最常见的使用方式只有两步：
 
 1. 第一次或电脑重启后，双击 `打开知识库.command`。
-2. 把新资料放进 `workspace/inbox/files/`，等待网页自动更新。
+2. 在网页右上角点击“投放资料”，拖入文件并等待它自动打开。
 
-后台处理失败时，上一版正常网站仍会继续提供；错误详情只写入 Git 忽略的私密日志。知识管家只监听本机 `127.0.0.1`，控制令牌不会出现在网页状态接口中。
+关闭投放窗口不会中断处理，刷新网页后仍会恢复本次进度。后台处理失败时，上一版正常网站仍会继续提供；错误详情只写入 Git 忽略的私密日志。知识管家只监听本机 `127.0.0.1`，网页投放会话与停止服务的控制令牌相互隔离，两者都不会进入知识网站构建。
 
 支持的输入包括：
 
@@ -134,6 +136,8 @@ cp tests/fixtures/java_g1.md workspace/inbox/files/
 - `.html`、`.htm`
 - `.docx`
 - `.pdf`：需要系统可用的 `pdftotext`，未安装时会给出明确提示
+
+较长的 Markdown 会按二级标题拆成多张知识卡，每张卡独立提炼、分类和检索；原始文件保持不变。系统会在卡片中记录标题路径、原文行号、正文哈希和拆分器版本，便于网页、API 与未来 App 回到同一来源。
 
 常用命令：
 
@@ -165,11 +169,29 @@ cp tests/fixtures/java_g1.md workspace/inbox/files/
 # 创建 SQLite 一致性备份
 ./scripts/backup
 
+# 用固定虚构资料执行批量、幂等、失败隔离验收
+./scripts/acceptance
+
+# 在临时候选库中验证某个快照，不覆盖正式数据库
+./scripts/restore-drill /absolute/path/to/snapshot.sqlite3 --sha256 <digest>
+
 # 运行 Python 测试
 ./scripts/test
 ```
 
 重复投入同一个文件不会生成重复资料：系统使用 SHA-256 去重，处理任务也可以安全重试。
+
+## 从 SQLite schema v1 升级
+
+新项目直接创建 schema v2。只有已经使用过 v0.4.0 或更早版本、且本机存在 v1 数据库时，才需要执行一次：
+
+```bash
+./scripts/knowledge-manager stop
+./scripts/migrate
+./scripts/knowledge-manager start
+```
+
+迁移会先生成经过完整性验证的 SQLite 快照，再在单一事务中升级；失败会完整回滚。旧 Markdown 来源会重新排队，以便按标题生成知识卡。程序不会静默迁移数据库，真实切换和恢复步骤见 [`docs/runbooks/backup-restore.md`](docs/runbooks/backup-restore.md)。
 
 ## 数据保存在哪里
 
@@ -191,9 +213,9 @@ cp tests/fixtures/java_g1.md workspace/inbox/files/
 
 ```mermaid
 flowchart LR
-    A["本地文件"] --> M["本地知识管家"]
+    A["网页拖放 / 本地文件"] --> M["本地知识管家"]
     M --> B["Python 入库、去重与分类"]
-    B --> C[("SQLite schema v1")]
+    B --> C[("SQLite schema v2")]
     B --> D["Markdown Vault"]
     B --> E["静态知识网站 / PWA"]
     C --> F["Java 21 只读服务"]
@@ -203,8 +225,8 @@ flowchart LR
 ```
 
 - **Python 主流水线**：拥有 schema、任务处理、分类、提炼、建站和运维检查；Java 可选 CLI 仅负责兼容的离线文件入队。
-- **本地知识管家**：单实例后台监听收件箱、运行流水线并持续提供上一版正常网站；只依赖 Python 标准库。
-- **SQLite**：保存可审计的结构化状态，并提供 FTS5 搜索能力。
+- **本地知识管家**：提供本机网页投放、逐文件进度、单实例收件箱监听和全流水线编排，并持续提供上一版正常网站；只依赖 Python 标准库。
+- **SQLite**：以 source 1:N knowledge cards 保存可审计状态，并提供 FTS5 搜索能力。
 - **静态网站**：原生 HTML、CSS、JavaScript，无前端运行时依赖。
 - **Java 只读 API**：只读取 Python 已生成的 SQLite，并结构性过滤 private 内容和本地绝对路径。
 - **共享适配边界**：Web 可从静态包或 API v1 加载；未来 App 复用 OpenAPI，不直接读取 SQLite。
@@ -253,7 +275,7 @@ curl http://127.0.0.1:8080/actuator/health/liveness
 curl http://127.0.0.1:8080/actuator/health/readiness
 ```
 
-镜像使用固定 Temurin 21 补丁版本、多阶段构建和 UID 10001；Compose 默认只绑定 `127.0.0.1`，根文件系统与数据库挂载均只读，并移除全部 Linux capabilities。SQLite JDBC 只获准在一个16MB、UID 10001 专用的临时挂载中加载原生库，不获得其他写目录；数据库以 `mode=ro&immutable=1` 打开，因此必须使用 `./scripts/backup` 生成的已验证快照，不能直接挂载正在写入的实时数据库。数据库不可读或 schema 不是 v1 时，readiness 返回失败。停止服务使用 `docker compose down`。
+镜像使用固定 Temurin 21 补丁版本、多阶段构建和 UID 10001；Compose 默认只绑定 `127.0.0.1`，根文件系统与数据库挂载均只读，并移除全部 Linux capabilities。SQLite JDBC 只获准在一个16MB、UID 10001 专用的临时挂载中加载原生库，不获得其他写目录；数据库以 `mode=ro&immutable=1` 打开，因此必须使用 `./scripts/backup` 生成的已验证快照，不能直接挂载正在写入的实时数据库。Java 只读层兼容 schema v1/v2；其他版本或不可读数据库会使 readiness 失败。停止服务使用 `docker compose down`。
 
 ## 公开站点与隐私边界
 
@@ -340,10 +362,9 @@ personal-knowledge-os/
 ## 路线图
 
 - J2：中文全文搜索、安全高亮和性能基准已完成。
-- J3：受限 Java 离线导入 CLI；复用 schema v1，通过跨运行时项目锁和单事务保证幂等，不开放 HTTP 写入。
+- J3：受限 Java 离线导入 CLI；兼容 schema v1/v2，通过跨运行时项目锁和单事务保证幂等，不开放 HTTP 写入。
 - J4：非 root Docker/Compose、存活与数据库就绪探针、容器 CI 已完成；远程认证和同步留到真实部署需求明确后设计。
-- 持续丰富公开 Demo 的虚构知识样例和交互验收。
-- 将大型综合笔记按 Markdown 标题拆成多张知识卡片。
+- 长 Markdown 拆卡、批量虚构验收和恢复演练已经完成；后续持续丰富公开 Demo 与交互验收。
 
 详细计划见 [Java 演进路线](docs/java-roadmap.md)和 [J2 搜索基准](docs/benchmarks/java-search.md)。
 
