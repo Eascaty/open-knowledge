@@ -6,5 +6,7 @@ PROJECT_ROOT=$(dirname -- "${SCRIPT_DIR}")
 
 cd "${PROJECT_ROOT}"
 node --check apps/web/src/data-source.js
+node --check apps/web/src/local-ingest.js
 node --check apps/web/src/app.js
 node tests/web/data-source.test.js
+node tests/web/local-ingest.test.js

@@ -19,6 +19,7 @@ class RunSummary:
     completed: int
     retried: int
     failed: int
+    pending: int = 0
 
 def _process_extract(
     connection: Any,
@@ -207,6 +208,18 @@ def process_jobs(
                 )
             else:
                 retried += 1
+    pending_row = connection.execute(
+        """
+        SELECT COUNT(*)
+        FROM jobs
+        WHERE status IN ('queued', 'running', 'retry')
+        """
+    ).fetchone()
+    pending = int(pending_row[0]) if pending_row is not None else 0
     return RunSummary(
-        claimed=claimed, completed=completed, retried=retried, failed=failed
+        claimed=claimed,
+        completed=completed,
+        retried=retried,
+        failed=failed,
+        pending=pending,
     )

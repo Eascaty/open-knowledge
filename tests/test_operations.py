@@ -163,6 +163,50 @@ class OperationsTests(unittest.TestCase):
             self.assertFalse(plan.executed)
             self.assertTrue(plan.ready)
 
+    def test_health_checks_explicit_candidate_instead_of_live_site(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self._project(root)
+            paths = ProjectPaths.from_root(root)
+            live = paths.site_dir / "dist"
+            (live / "broken.html").write_text(
+                '<a href="missing.html">broken live site</a>', encoding="utf-8"
+            )
+            candidate = paths.site_dir / ".dist-candidate-test"
+            build_site(
+                {
+                    "schema_version": 1,
+                    "generated_at": "2026-07-27T00:00:00Z",
+                    "root": "root",
+                    "site": {"title": "Candidate"},
+                    "nodes": [
+                        {
+                            "id": "root",
+                            "parent_id": None,
+                            "name": "知识",
+                            "path": [],
+                        }
+                    ],
+                    "documents": [],
+                    "relations": [],
+                },
+                candidate,
+                visibility="private",
+            )
+
+            health = run_health_checks(
+                root,
+                canonical_path=candidate / "data" / "site-data.json",
+                candidate_roots=(candidate,),
+                include_vault_links=False,
+            )
+
+            self.assertTrue(health.passed)
+            link_check = next(
+                check for check in health.checks if check.name == "broken-links"
+            )
+            self.assertEqual(link_check.metrics["broken_links"], 0)
+
     def test_public_gate_rejects_private_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

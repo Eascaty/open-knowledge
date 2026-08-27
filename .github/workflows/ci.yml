@@ -47,7 +47,7 @@ jobs:
           python-version: "3.12"
       - name: Build synthetic public demo
         run: ./scripts/build-demo "${RUNNER_TEMP}/personal-knowledge-os-demo"
-      - name: Test Web data-source adapters
+      - name: Test Web read and local inbox adapters
         run: ./scripts/test-web
 
   java-test:

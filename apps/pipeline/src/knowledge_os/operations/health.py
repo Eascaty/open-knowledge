@@ -67,6 +67,7 @@ def run_health_checks(
     project_root: PathLike,
     *,
     canonical_path: Optional[PathLike] = None,
+    candidate_roots: Optional[Sequence[PathLike]] = None,
     include_vault_links: bool = True,
     minimum_free_bytes: int = 2 * 1024**3,
     warning_free_bytes: int = 10 * 1024**3,
@@ -88,18 +89,26 @@ def run_health_checks(
     )
     site_dist = paths.site_dir / "dist"
     public_export = root / "exports" / "public"
+    candidates = (
+        tuple(Path(item).expanduser().resolve() for item in candidate_roots)
+        if candidate_roots is not None
+        else None
+    )
+    if candidates is not None and not candidates:
+        raise ValueError("health checks require at least one candidate root")
+    privacy_roots = candidates or (site_dist, public_export)
 
     checks: List[CheckResult] = [
         check_disk(root, minimum_free_bytes, warning_free_bytes),
         check_database(database, required_tables=REQUIRED_TABLES),
         check_json_document(canonical, name="canonical-data"),
         check_privacy(
-            (site_dist, public_export),
+            privacy_roots,
             project_root=root,
             max_public_file_bytes=25 * 1024**2,
         ),
     ]
-    link_roots: List[Path] = [site_dist]
+    link_roots: List[Path] = list(candidates or (site_dist,))
     if include_vault_links:
         link_roots.append(paths.vault_dir)
     checks.extend(

@@ -656,14 +656,15 @@ function readRoute() {
 }
 
 function showSearch() {
+  window.dispatchEvent(new Event("knowledge:close-ingest"));
   ui.searchDialog.hidden = false;
-  document.body.style.overflow = "hidden";
+  document.body.classList.add("search-open");
   window.setTimeout(() => ui.searchInput.focus(), 0);
 }
 
 function hideSearch() {
   ui.searchDialog.hidden = true;
-  document.body.style.overflow = "";
+  document.body.classList.remove("search-open");
   ui.searchInput.value = "";
   clear(ui.searchResults);
   ui.searchHint.textContent = "输入关键词开始搜索；支持中文连续匹配。";
@@ -949,6 +950,9 @@ function bindUi() {
   window.addEventListener("hashchange", readRoute);
   window.addEventListener("online", updateConnection);
   window.addEventListener("offline", updateConnection);
+  window.addEventListener("knowledge:close-search", () => {
+    if (!ui.searchDialog.hidden) hideSearch();
+  });
   window.addEventListener("resize", () => {
     if (state.view === "map") drawGraph();
     if (window.innerWidth > 1180) document.body.classList.remove("context-open");
@@ -980,6 +984,11 @@ function showFatalError(error) {
 
 async function start() {
   bindUi();
+  if (window.KnowledgeLocalIngest) {
+    void window.KnowledgeLocalIngest.mount({ notify: showToast }).catch(() => {
+      // A static/public build intentionally has no writable local manager.
+    });
+  }
   try {
     const dataSource = window.KnowledgeDataSources.fromDocument(document);
     const { data, search, graph } = await dataSource.loadWorkspace();
@@ -996,7 +1005,16 @@ async function start() {
     ui.privacyBadge.textContent = privateBuild ? "私密知识库" : "公开知识库";
     document.documentElement.dataset.visibility = data.site.visibility;
     updateConnection();
-    readRoute();
+    const pendingDocumentId = window.KnowledgeLocalIngest?.peekPendingDocumentId();
+    if (pendingDocumentId && state.documents.has(pendingDocumentId)) {
+      navigateToDocument(pendingDocumentId);
+      if (state.activeDocumentId === pendingDocumentId) {
+        window.KnowledgeLocalIngest.clearPendingDocumentId();
+        showToast("已打开刚刚整理完成的知识");
+      }
+    } else {
+      readRoute();
+    }
     ui.app.setAttribute("aria-busy", "false");
 
     if ("serviceWorker" in navigator && window.isSecureContext) {

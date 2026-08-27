@@ -12,7 +12,9 @@
     <link rel="manifest" href="./manifest.webmanifest">
     <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
     <link rel="stylesheet" href="./assets/styles.css">
+    <link rel="stylesheet" href="./assets/local-ingest.css">
     <script src="./assets/data-source.js" defer></script>
+    <script src="./assets/local-ingest.js" defer></script>
     <script src="./assets/app.js" defer></script>
   </head>
   <body>
@@ -35,10 +37,17 @@
           <kbd>⌘ K</kbd>
         </button>
 
-        <div class="topbar-meta">
-          <span class="connection-dot" id="connection-dot" title="网络状态"></span>
-          <span class="privacy-badge" id="privacy-badge">私密知识库</span>
-          <time id="updated-at">正在载入</time>
+        <div class="topbar-actions">
+          <button class="ingest-trigger" id="ingest-trigger" type="button" aria-haspopup="dialog" aria-controls="ingest-dialog" aria-label="投放资料到知识库" hidden>
+            <span aria-hidden="true">＋</span>
+            <span class="ingest-trigger-label">投放资料</span>
+            <span class="ingest-trigger-state" id="ingest-trigger-state" aria-hidden="true"></span>
+          </button>
+          <div class="topbar-meta">
+            <span class="connection-dot" id="connection-dot" title="网络状态"></span>
+            <span class="privacy-badge" id="privacy-badge">私密知识库</span>
+            <time id="updated-at">正在载入</time>
+          </div>
         </div>
       </header>
 
@@ -118,6 +127,51 @@
         <div class="search-hint" id="search-hint">输入关键词开始搜索；支持中文连续匹配。</div>
         <ol class="search-results" id="search-results"></ol>
       </div>
+    </section>
+
+    <section class="ingest-dialog" id="ingest-dialog" role="dialog" aria-modal="true" aria-labelledby="ingest-title" aria-describedby="ingest-description" hidden>
+      <div class="ingest-backdrop" data-close-ingest></div>
+      <div class="ingest-card">
+        <div class="ingest-head">
+          <div>
+            <span class="eyebrow">本地自动整理</span>
+            <h2 id="ingest-title">投放资料</h2>
+          </div>
+          <button type="button" class="icon-button" data-close-ingest aria-label="关闭投放资料窗口">×</button>
+        </div>
+
+        <div class="ingest-body">
+          <p class="ingest-description" id="ingest-description">文件只会写入这台电脑的私密收件箱；接收完成后，知识管家会自动去重、分类并更新知识网络。</p>
+
+          <button class="ingest-dropzone" id="ingest-dropzone" type="button" aria-describedby="ingest-format-hint">
+            <span class="ingest-drop-icon" aria-hidden="true">＋</span>
+            <strong>拖入文件，或点此选择</strong>
+            <small id="ingest-format-hint">正在确认这台电脑支持的文件类型……</small>
+          </button>
+          <input class="visually-hidden" id="ingest-file-input" type="file" multiple tabindex="-1" aria-label="选择要投入知识库的文件">
+
+          <section class="ingest-pipeline" id="ingest-pipeline" aria-labelledby="ingest-pipeline-title">
+            <span class="ingest-pipeline-mark" id="ingest-pipeline-mark" aria-hidden="true"></span>
+            <div>
+              <strong id="ingest-pipeline-title">知识管家已就绪</strong>
+              <small id="ingest-pipeline-detail">选择文件后将自动开始处理</small>
+            </div>
+          </section>
+
+          <div class="ingest-list-head">
+            <h3>最近投放</h3>
+            <button class="ingest-clear" id="ingest-clear" type="button" hidden>清除已完成</button>
+          </div>
+          <p class="ingest-empty" id="ingest-empty">还没有投放记录。</p>
+          <ol class="ingest-file-list" id="ingest-file-list"></ol>
+        </div>
+
+        <div class="ingest-foot">
+          <span>关闭窗口不会中断已经接收的资料。</span>
+          <button class="ingest-done" type="button" data-close-ingest>完成</button>
+        </div>
+      </div>
+      <p class="visually-hidden" id="ingest-announcer" role="status" aria-live="polite" aria-atomic="true"></p>
     </section>
 
     <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>

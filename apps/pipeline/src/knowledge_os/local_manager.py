@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import functools
 import hashlib
-import html
 import http.client
 import json
 import os
@@ -14,19 +12,31 @@ import socket
 import threading
 import time
 import traceback
-import urllib.parse
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Callable, Dict, Mapping, Optional
+from typing import Any, BinaryIO, Callable, Dict, Mapping, Optional, Sequence
 
 from .automation import AutomationResult, run_full_pipeline
 from .config import ProjectPaths, atomic_write_json, initialize_layout
+from .local_http import (
+    DEFAULT_HOST,
+    DEFAULT_PORT,
+    STATUS_PATH,
+    STOP_PATH,
+    ManagerHttpServer,
+    create_manager_server,
+)
+from .local_inbox import (
+    HISTORY_LIMIT,
+    InboxUploadStore,
+    limited_upload_history,
+    max_upload_bytes,
+    normalized_upload_history,
+    public_upload,
+    source_known,
+    upload_outcomes,
+)
 
 
-DEFAULT_HOST = "127.0.0.1"
-DEFAULT_PORT = 8765
-STATUS_PATH = "/__knowledge/status"
-STOP_PATH = "/__knowledge/stop"
 SERVICE_NAME = "personal-knowledge-manager"
 
 
@@ -98,6 +108,7 @@ def _public_state(state: Mapping[str, Any]) -> Dict[str, Any]:
             "jobs_claimed",
             "jobs_completed",
             "jobs_retried",
+            "jobs_pending",
             "jobs_failed",
             "documents",
             "gate_allowed",
@@ -193,107 +204,6 @@ def _port_is_open(host: str, port: int) -> bool:
         return False
 
 
-class _ManagerHttpServer(ThreadingHTTPServer):
-    daemon_threads = True
-    allow_reuse_address = True
-
-    manager: "LocalKnowledgeManager"
-
-
-class _ManagerRequestHandler(SimpleHTTPRequestHandler):
-    server_version = "PersonalKnowledgeManager/1"
-
-    @property
-    def manager(self) -> "LocalKnowledgeManager":
-        return self.server.manager  # type: ignore[attr-defined]
-
-    def translate_path(self, path: str) -> str:
-        translated = Path(super().translate_path(path))
-        site_root = (self.manager.paths.site_dir / "dist").resolve()
-        try:
-            translated.resolve().relative_to(site_root)
-        except (OSError, ValueError):
-            return str(site_root / ".outside-site-is-not-served")
-        return str(translated)
-
-    def _send_json(self, status: int, value: Mapping[str, Any]) -> None:
-        payload = (json.dumps(value, ensure_ascii=False) + "\n").encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(payload)))
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Referrer-Policy", "no-referrer")
-        self.end_headers()
-        self.wfile.write(payload)
-
-    def _send_waiting_page(self) -> None:
-        status = self.manager.public_state()
-        message = "正在第一次整理资料，完成后本页会自动显示知识库。"
-        if status.get("last_error"):
-            message = str(status["last_error"])
-        payload = (
-            "<!doctype html><html lang='zh-CN'><head>"
-            "<meta charset='utf-8'><meta name='viewport' "
-            "content='width=device-width,initial-scale=1'>"
-            "<meta http-equiv='refresh' content='2'>"
-            "<title>知识库正在准备</title>"
-            "<style>body{margin:0;min-height:100vh;display:grid;place-items:center;"
-            "font:16px/1.7 -apple-system,BlinkMacSystemFont,sans-serif;"
-            "background:#f5f3ee;color:#202520}.card{max-width:34rem;margin:2rem;"
-            "padding:2rem;border-radius:1.2rem;background:#fff;"
-            "box-shadow:0 1rem 3rem #20252018}h1{font-size:1.4rem}</style>"
-            "</head><body><main class='card'><h1>知识库正在准备</h1><p>%s</p>"
-            "<p>你可以保留这个页面，无需重复启动。</p></main></body></html>"
-        ) % html.escape(message)
-        payload = payload.encode("utf-8")
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(payload)))
-        self.send_header(
-            "Content-Security-Policy",
-            "default-src 'none'; style-src 'unsafe-inline'",
-        )
-        self.end_headers()
-        self.wfile.write(payload)
-
-    def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
-        path = urllib.parse.urlsplit(self.path).path
-        if path == STATUS_PATH:
-            self._send_json(200, self.manager.public_state())
-            return
-        if path == "/" and not (
-            self.manager.paths.site_dir / "dist" / "index.html"
-        ).is_file():
-            self._send_waiting_page()
-            return
-        super().do_GET()
-
-    def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
-        path = urllib.parse.urlsplit(self.path).path
-        if path != STOP_PATH:
-            self._send_json(404, {"ok": False, "error": "not_found"})
-            return
-        supplied = self.headers.get("X-Knowledge-Token", "")
-        if not self.manager.authorized(supplied):
-            self._send_json(403, {"ok": False, "error": "forbidden"})
-            return
-        self.manager.request_stop()
-        self._send_json(202, {"ok": True, "status": "stopping"})
-
-    def end_headers(self) -> None:
-        if urllib.parse.urlsplit(self.path).path not in {STATUS_PATH, STOP_PATH}:
-            self.send_header("Cache-Control", "no-cache, must-revalidate")
-            self.send_header("X-Content-Type-Options", "nosniff")
-            self.send_header("Referrer-Policy", "no-referrer")
-        super().end_headers()
-
-    def log_message(self, format: str, *args: Any) -> None:
-        status = str(args[1]) if len(args) > 1 else ""
-        if self.command not in {"GET", "HEAD"} or status.startswith(("4", "5")):
-            super().log_message(format, *args)
-
-
 class LocalKnowledgeManager:
     """Serve the last successful site while watching the private inbox."""
 
@@ -319,7 +229,9 @@ class LocalKnowledgeManager:
         self.pipeline_runner = pipeline_runner
         self.stop_event = threading.Event()
         self.state_lock = threading.Lock()
-        self.server: Optional[_ManagerHttpServer] = None
+        self.server: Optional[ManagerHttpServer] = None
+        self.browser_token = secrets.token_urlsafe(32)
+        self.inbox_store: Optional[InboxUploadStore] = None
         previous = _read_state(_state_path(self.paths))
         self.state: Dict[str, Any] = {
             "service": SERVICE_NAME,
@@ -335,6 +247,9 @@ class LocalKnowledgeManager:
             "last_result": previous.get("last_result"),
             "successful_inbox_fingerprint": previous.get(
                 "successful_inbox_fingerprint"
+            ),
+            "recent_uploads": normalized_upload_history(
+                previous.get("recent_uploads")
             ),
         }
 
@@ -352,6 +267,192 @@ class LocalKnowledgeManager:
             supplied, self.control_token
         )
 
+    def authorized_browser(self, supplied: str) -> bool:
+        return bool(supplied) and secrets.compare_digest(
+            supplied, self.browser_token
+        )
+
+    def browser_session(self) -> Dict[str, Any]:
+        store = self.inbox_store
+        if store is None:
+            raise ManagerError("browser inbox is not initialized")
+        return {
+            "ok": True,
+            "schema_version": 1,
+            "api_version": "browser-v1",
+            "service": SERVICE_NAME,
+            "session_token": self.browser_token,
+            "capabilities": {
+                "file_upload": True,
+                "maximum_file_bytes": store.maximum_bytes,
+                "accepted_extensions": list(store.accepted_extensions),
+                "history_limit": HISTORY_LIMIT,
+            },
+        }
+
+    def inbox_status(self) -> Dict[str, Any]:
+        with self.state_lock:
+            uploads = [
+                public_upload(item)
+                for item in self.state.get("recent_uploads", [])
+                if isinstance(item, Mapping)
+            ]
+            manager = {
+                "status": str(self.state.get("status", "unknown")),
+                "last_success_at": self.state.get("last_success_at"),
+                "last_error": self.state.get("last_error"),
+            }
+        return {
+            "ok": True,
+            "schema_version": 1,
+            "service": SERVICE_NAME,
+            "manager_status": manager["status"],
+            "manager": manager,
+            "uploads": uploads,
+            "poll_after_ms": max(400, min(2000, int(self.poll_seconds * 1000))),
+        }
+
+    def receive_browser_upload(
+        self,
+        stream: BinaryIO,
+        *,
+        encoded_filename: str,
+        content_length: str,
+    ) -> Dict[str, Any]:
+        store = self.inbox_store
+        if store is None:
+            raise ManagerError("browser inbox is not initialized")
+        received_at = _utc_now()
+        receipt = store.receive(
+            stream,
+            encoded_filename=encoded_filename,
+            content_length=content_length,
+            upload_id=secrets.token_hex(16),
+            received_at=received_at,
+        )
+        upload = receipt.to_dict()
+        known_before = source_known(self.paths, receipt.sha256)
+        with self.state_lock:
+            history = list(self.state.get("recent_uploads", []))
+            known_before = known_before or any(
+                isinstance(item, Mapping) and item.get("sha256") == receipt.sha256
+                for item in history
+            )
+            upload.update(
+                {
+                    "known_before": known_before,
+                    "revision": 1,
+                    "updated_at": received_at,
+                }
+            )
+            self.state["recent_uploads"] = limited_upload_history(
+                [upload] + history
+            )
+            _write_state(_state_path(self.paths), self.state)
+        return public_upload(upload)
+
+    def _begin_upload_attempt(self, attempt_id: str) -> list[str]:
+        started_at = _utc_now()
+        with self.state_lock:
+            history = list(self.state.get("recent_uploads", []))
+            selected = []
+            for upload in history:
+                if not isinstance(upload, dict):
+                    continue
+                status = upload.get("status")
+                error = upload.get("error")
+                retryable_failure = (
+                    status == "failed"
+                    and isinstance(error, Mapping)
+                    and error.get("retryable") is True
+                )
+                if status != "queued" and not retryable_failure:
+                    continue
+                upload_id = upload.get("upload_id")
+                if not isinstance(upload_id, str):
+                    continue
+                selected.append(upload_id)
+                upload.update(
+                    {
+                        "status": "processing",
+                        "attempt_id": attempt_id,
+                        "started_at": started_at,
+                        "updated_at": started_at,
+                        "revision": int(upload.get("revision", 0)) + 1,
+                    }
+                )
+                upload.pop("completed_at", None)
+                upload.pop("error", None)
+                upload.pop("result", None)
+            self.state["recent_uploads"] = history
+            _write_state(_state_path(self.paths), self.state)
+        return selected
+
+    def _settle_upload_attempt(self, upload_ids: Sequence[str]) -> Dict[str, int]:
+        selected = set(upload_ids)
+        with self.state_lock:
+            candidates = {
+                str(upload.get("upload_id")): str(upload.get("sha256"))
+                for upload in self.state.get("recent_uploads", [])
+                if isinstance(upload, Mapping)
+                and upload.get("upload_id") in selected
+                and isinstance(upload.get("upload_id"), str)
+                and isinstance(upload.get("sha256"), str)
+            }
+        outcomes = upload_outcomes(self.paths, candidates)
+        counts = {"completed": 0, "permanent": 0, "retryable": 0}
+        settled_at = _utc_now()
+        with self.state_lock:
+            history = list(self.state.get("recent_uploads", []))
+            for upload in history:
+                if (
+                    not isinstance(upload, dict)
+                    or upload.get("upload_id") not in selected
+                ):
+                    continue
+                outcome = outcomes.get(
+                    upload["upload_id"],
+                    {"status": "failed", "retryable": True},
+                )
+                upload["updated_at"] = settled_at
+                upload["revision"] = int(upload.get("revision", 0)) + 1
+                upload.pop("attempt_id", None)
+                if outcome["status"] == "completed":
+                    upload.update(
+                        {
+                            "status": "completed",
+                            "completed_at": settled_at,
+                            "result": {
+                                "outcome": (
+                                    "duplicate"
+                                    if upload.get("known_before")
+                                    else "created"
+                                ),
+                                "site_revision": outcome["site_revision"],
+                                "document": outcome["document"],
+                            },
+                        }
+                    )
+                    upload.pop("error", None)
+                    counts["completed"] += 1
+                else:
+                    retryable = bool(outcome.get("retryable", True))
+                    upload.update(
+                        {
+                            "status": "failed",
+                            "error": {
+                                "code": "processing_failed",
+                                "retryable": retryable,
+                            },
+                        }
+                    )
+                    upload.pop("completed_at", None)
+                    upload.pop("result", None)
+                    counts["retryable" if retryable else "permanent"] += 1
+            self.state["recent_uploads"] = limited_upload_history(history)
+            _write_state(_state_path(self.paths), self.state)
+        return counts
+
     def request_stop(self) -> None:
         self._save(status="stopping")
         self.stop_event.set()
@@ -359,13 +460,34 @@ class LocalKnowledgeManager:
             threading.Thread(target=self.server.shutdown, daemon=True).start()
 
     def _run_pipeline(self, fingerprint: str) -> bool:
+        attempt_id = secrets.token_hex(12)
+        upload_ids = self._begin_upload_attempt(attempt_id)
         self._save(status="updating", last_attempt_at=_utc_now(), last_error=None)
+        settled = False
         try:
             result = self.pipeline_runner(self.paths.root, visibility="private")
-            if not result.ok:
-                raise ManagerError("pipeline checks did not pass")
+            settlement = self._settle_upload_attempt(upload_ids)
+            settled = True
+            jobs_pending = int(
+                getattr(result, "jobs_pending", result.jobs_retried)
+            )
+            checks_passed = result.gate_allowed and result.health_status != "FAIL"
+            partial_success = (
+                result.jobs_failed > 0
+                and result.jobs_retried == 0
+                and jobs_pending == 0
+            )
+            if (
+                settlement["retryable"]
+                or jobs_pending
+                or not checks_passed
+                or (not result.ok and not partial_success)
+            ):
+                raise ManagerError("pipeline has unfinished work or failed checks")
         except Exception as exc:
             traceback.print_exc()
+            if not settled:
+                self._settle_upload_attempt(upload_ids)
             self._save(
                 status=(
                     "running"
@@ -412,12 +534,12 @@ class LocalKnowledgeManager:
 
     def serve(self) -> None:
         initialize_layout(self.paths)
-        handler = functools.partial(
-            _ManagerRequestHandler,
-            directory=str(self.paths.site_dir / "dist"),
+        self.inbox_store = InboxUploadStore(
+            self.paths, max_upload_bytes(self.paths)
         )
-        server = _ManagerHttpServer((DEFAULT_HOST, self.port), handler)
-        server.manager = self
+        server = create_manager_server(
+            self, self.port, self.paths.site_dir / "dist"
+        )
         self.server = server
         actual_port = int(server.server_address[1])
         self.port = actual_port

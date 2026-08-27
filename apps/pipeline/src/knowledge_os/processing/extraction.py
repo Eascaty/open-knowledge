@@ -123,6 +123,8 @@ TEXT_EXTENSIONS = {
     ".yaml",
     ".yml",
 }
+MAX_DOCX_XML_BYTES = 32 * 1024 * 1024
+MAX_DOCX_COMPRESSION_RATIO = 200
 
 
 def _decode_text(data: bytes) -> str:
@@ -149,7 +151,18 @@ def _title_from_text(text: str, fallback: str) -> str:
 def _extract_docx(path: Path) -> str:
     try:
         with zipfile.ZipFile(str(path)) as archive:
-            xml_data = archive.read("word/document.xml")
+            document = archive.getinfo("word/document.xml")
+            if document.flag_bits & 0x1:
+                raise ExtractionError("encrypted DOCX is not supported")
+            if document.file_size > MAX_DOCX_XML_BYTES:
+                raise ExtractionError("DOCX document.xml exceeds the safe limit")
+            compression_ratio = document.file_size / max(1, document.compress_size)
+            if compression_ratio > MAX_DOCX_COMPRESSION_RATIO:
+                raise ExtractionError("DOCX compression ratio exceeds the safe limit")
+            with archive.open(document) as source:
+                xml_data = source.read(MAX_DOCX_XML_BYTES + 1)
+            if len(xml_data) > MAX_DOCX_XML_BYTES:
+                raise ExtractionError("DOCX document.xml exceeds the safe limit")
     except (zipfile.BadZipFile, KeyError) as exc:
         raise ExtractionError(f"invalid DOCX: {exc}") from exc
     root = ElementTree.fromstring(xml_data)

@@ -10,7 +10,14 @@ from typing import Any, Mapping, Union
 SCHEMA_VERSION = 1
 VALID_VISIBILITIES = {"private", "public"}
 ASSET_DIR = Path(__file__).resolve().parents[5] / "web" / "src"
-REQUIRED_ASSETS = ("index.html", "data-source.js", "app.js", "styles.css")
+REQUIRED_ASSETS = (
+    "index.html",
+    "data-source.js",
+    "app.js",
+    "styles.css",
+    "local-ingest.js",
+    "local-ingest.css",
+)
 
 
 class SiteDataError(ValueError):
