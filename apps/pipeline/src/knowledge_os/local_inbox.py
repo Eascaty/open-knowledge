@@ -280,7 +280,7 @@ def upload_outcomes(
                 if not isinstance(digest, str) or not isinstance(document_id, str):
                     continue
                 path = document.get("path")
-                published[digest] = {
+                candidate = {
                     "id": document_id,
                     "title": document.get("title", "")
                     if isinstance(document.get("title", ""), str)
@@ -292,6 +292,13 @@ def upload_outcomes(
                     if isinstance(path, list)
                     else [],
                 }
+                source_id = document.get("source_id")
+                if digest not in published or (
+                    isinstance(source_id, str) and document_id == source_id
+                ):
+                    # A long source may create several cards. The first card
+                    # keeps the source ID and is the stable landing page.
+                    published[digest] = candidate
 
     terminal_digests = set()
     if paths.database_file.is_file():

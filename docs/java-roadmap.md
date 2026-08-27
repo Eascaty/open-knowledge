@@ -39,7 +39,7 @@
 ### J3：导入与幂等
 
 - 状态：受限实现与远端交付门禁均已完成（2026-08-12）。
-- 增加独立 Java 文件导入 CLI，复用 schema v1，仅写入不可变 raw、source、初始 extract 任务与审计事件；HTTP API 仍无写端点。
+- 增加独立 Java 文件导入 CLI，兼容 schema v1/v2，仅写入不可变 raw、source、初始 extract 任务与审计事件；HTTP API 仍无写端点。
 - Python 继续独占 schema 迁移、任务处理、分类、提炼和发布；Java 不建表、不迁移、不处理任务。
 - Python 与 Java 使用同一个 POSIX 项目锁，避免跨运行时并发写；每份文件的 raw 与 SQLite 变更构成一个失败可清理的事务边界。
 - 已覆盖内容哈希幂等、缺失 raw 修复、symlink/大小/越界拒绝、raw 篡改、任务失败回滚和锁竞争。
@@ -49,7 +49,7 @@
 - 状态：最小上线切片与远端 Linux 容器门禁均已完成（2026-08-12）。
 - 提供固定 Temurin 21、多阶段、非 root 的 Docker 镜像和只读 Docker Compose 运行边界。
 - 提供 Actuator 存活与数据库就绪探针；除 health 外不暴露管理端点。
-- CI 使用隔离 schema v1 数据库验证容器用户、只读数据库与三个健康入口。
+- CI 使用 Python 当前初始化流程创建真实 schema v2 数据库，并验证容器用户、只读数据库与三个健康入口；Java 仍保留 schema v1 兼容测试。
 - 保留完全本地、无账号、无付费 API 的默认运行模式；远程认证和同步待真实需求明确。
 
 ## 工程验收标准

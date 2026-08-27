@@ -48,11 +48,14 @@ schema v2 把 `source → document` 从一对一改为一对多，用于把一�
 ```bash
 ./scripts/knowledge-manager stop
 ./scripts/migrate
-./scripts/acceptance
 ./scripts/knowledge-manager start
+./scripts/kb status
+./scripts/doctor
 ```
 
-`./scripts/migrate` 会先自动生成并验证 `knowledge-pre-schema-v2-*` 快照，然后在单一事务中迁移。旧 document ID、分类、事件和 FTS 内容会保留；现有 Markdown source 会安全重置到 extract 阶段，让旧长文在知识管家重启后实际拆卡，报告中的 `requeued_sources` 会给出数量。失败时数据库回滚到完整 v1。再次运行是幂等的，不会重复迁移、重复排队或重复备份。
+`./scripts/migrate` 会先自动生成并验证 `knowledge-pre-schema-v2-*` 快照，然后在单一事务中迁移。保存命令输出中的快照路径和 SHA-256，并可先用 `restore-drill` 验证这份迁移前快照。旧 document ID、分类、事件和 FTS 内容会保留；现有 Markdown source 会安全重置到 extract 阶段，让旧长文在知识管家重启后实际拆卡，报告中的 `requeued_sources` 会给出数量。失败时数据库回滚到完整 v1。再次运行是幂等的，不会重复迁移、重复排队或重复备份。
+
+`scripts/acceptance` 是只使用虚构临时数据的工程回归入口，可以在维护前后单独运行，但它不会代替对真实迁移库执行 `kb status` 和 `doctor`。
 
 不要绕过 `./scripts/migrate` 手工修改 `metadata.schema_version`。
 

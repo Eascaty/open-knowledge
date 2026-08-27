@@ -1,23 +1,27 @@
 # 测试报告
 
-- 日期：2026-08-23（Asia/Shanghai）
+- 日期：2026-08-27（Asia/Shanghai）
 - 运行环境：macOS、Python 3.9.6、SQLite FTS5 trigram、Temurin JDK 21.0.12、Maven 3.9.11
-- 结果：56 项 Python 测试与9个 Web 场景全部通过；未改动的 Java 模块沿用最近34项通过结果，J4 Linux 容器冒烟沿用最近通过结果
+- 结果：87 项 Python 测试与11个 Web 场景全部通过；Java 38项测试在隔离 JDK 21 环境通过，J4 Linux 容器冒烟由远程 CI 复验
 - 正式目录复验：`$HOME/AI/knowledge`
-- 最终健康检查：PASS；隐私问题0；断链0；网络请求0
-- 浏览器验收：桌面1280×720与手机390×844布局正常，分类导航可交互，控制台0错误
-- Java HTTP 冒烟：真实 SQLite 健康状态 `UP`，schema v1、分类树和 public-only 列表响应正确
-- Java J3 覆盖率：指令89.4%、分支74.1%；CI 最低门槛保持80%与60%
+- 隔离验收健康检查：PASS；Gate 允许；网络请求0；本轮未读取或迁移真实私密数据库
+- 浏览器布局：公开 Demo 的桌面1280×720与手机390×844验收沿用最近通过结果；本机网页投放由 HTTP E2E 与 Web 交互测试覆盖
+- Java SQLite 兼容：schema v1/v2 健康与导入测试通过，缺失、非数字和未知版本稳定拒绝
+- Java 覆盖率：指令89.5%、分支76.5%；CI 最低门槛保持80%与60%
 - Java J2 搜索基准：固定2,000条 public 中文资料、200条命中、10次预热与50次测量；中位数1.325ms、p95 2.260ms，1秒回归门禁通过
 - Maven Wrapper：固定 Maven 3.9.11 与 SHA-256，首次下载和完整 `verify` 通过
 - 公开 Demo：仅3份固定虚构资料，独立临时 SQLite，9项任务完成，public 门禁 PASS，网络请求0
 - Pages 验收：HTTPS 200；线上桌面与手机布局正常，搜索、详情和关系地图可交互，控制台0错误
 - 网页投放 E2E：真实临时知识管家完成 `session → upload → queued/processing → completed → document.id → site-data`，浏览器令牌未进入公开状态或站点文件
 - 公开 Demo 复验：3份虚构资料、9项任务、发布门禁 PASS、网络请求0；投放入口默认隐藏
+- 批量虚构验收：5个输入、4个唯一 source、6张知识卡、3张拆分卡；第二次运行5个重复，1个故意坏资料隔离且正常资料保留，Gate/Health PASS，网络请求0
 
 ## 自动测试范围
 
 - raw 不可变与 SHA-256 幂等去重
+- 长 Markdown H2 拆卡、frontmatter/代码围栏忽略、卡片上限合并、稳定 ID、独立分类和重跑产物收敛
+- schema v1→v2 快照前置、事务回滚、FK/完整性校验、旧 Markdown 重排队与重复迁移幂等
+- 快照 SHA-256、v1/v2 临时候选恢复、关键表/行数核对、损坏快照拒绝且正式数据库字节不变
 - Java/G1 深层母子分类
 - 未知资料进入“待归类”
 - 非法跨级模型路径被拒绝
@@ -31,6 +35,7 @@
 - 上传半文件只进入未监控暂存区，中断清理、同名不覆盖、目录0700、文件0600、大小/类型/路径校验
 - manager 重启恢复未完成状态并轮换浏览器令牌，令牌不写状态文件或静态站点
 - retry 轮、Gate/Health 失败和原子发布异常均保留上一版正式站，并清理候选目录
+- 数据库实际 pending/failed 状态决定退出码；单条入库失败继续处理后续资料，终态坏资料不阻塞已检查的正常站点
 - Service Worker 不缓存本地控制接口、构建版本或 private 数据；前端资源变化会更新缓存版本
 - DOCX 正常解析与高压缩比压缩炸弹拒绝
 - 后台重复启动复用同一实例，并只能通过匹配控制令牌安全停止
@@ -51,7 +56,7 @@
 - canonical JSON Schema 强制校验与 OpenAPI v1 路由契约
 - Web 静态包/API v1 数据源适配器与生成产物加载顺序
 - Java 控制器、应用服务和只读仓储分层边界
-- Java SQLite schema v1 只读查询和分类树构建
+- Java SQLite schema v1/v2 只读查询、离线入队和分类树构建
 - Java API 过滤 private 条目并删除来源绝对路径
 - Java 搜索使用 FTS5 trigram 与 BM25；覆盖中文短语、短查询降级、无命中降级、SQL/FTS 特殊字符、稳定分页与排序
 - 搜索高亮使用纯文本标记并转义 HTML 特殊字符；FTS 与 LIKE 路径均结构性过滤 private 内容
@@ -61,7 +66,7 @@
 - Maven `verify` 构建与 JaCoCo 覆盖率报告
 - Maven Wrapper 下载校验、CI 覆盖率失败门禁、10分钟任务超时
 - Spring Boot 实际启动、真实 SQLite 只读连接与 HTTP 响应
-- Actuator liveness 与数据库/schema v1 readiness；数据库不可用时返回503
+- Actuator liveness 与数据库/schema v1/v2 readiness；数据库不可用或版本不受支持时返回503
 - 非 root 容器、只读根文件系统、只读 SQLite 挂载、无 capabilities 与数据库哈希不变
 - SQLite JDBC 原生库使用专用受限 tmpfs；普通 `/tmp` 与数据库挂载不获得执行权限
 - readiness 失败时 CI 输出容器 UID、挂载权限和脱敏 SQL 状态，响应仍不公开数据库详情
@@ -104,6 +109,7 @@ python3 -B -m unittest discover -s tests -v
 zsh -n scripts/*
 plutil -lint ops/launchd/com.local.knowledge-os.plist.template
 ./scripts/test-web
+./scripts/acceptance
 ./scripts/java-test
 ./scripts/build-demo
 ```

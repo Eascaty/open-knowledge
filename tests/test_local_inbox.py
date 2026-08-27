@@ -250,10 +250,19 @@ class LocalInboxTests(unittest.TestCase):
                     {
                         "documents": [
                             {
-                                "id": "doc-good",
+                                "id": "sha256-{}".format(good_digest),
+                                "source_id": "sha256-{}".format(good_digest),
                                 "title": "Good",
                                 "node_id": "ai-agent",
                                 "path": ["AI", "Agent"],
+                                "source": {"sha256": good_digest},
+                            },
+                            {
+                                "id": "card-secondary",
+                                "source_id": "sha256-{}".format(good_digest),
+                                "title": "Secondary card",
+                                "node_id": "technology",
+                                "path": ["技术"],
                                 "source": {"sha256": good_digest},
                             }
                         ]
@@ -296,7 +305,10 @@ class LocalInboxTests(unittest.TestCase):
                 },
             )
             self.assertEqual(outcomes["good"]["status"], "completed")
-            self.assertEqual(outcomes["good"]["document"]["id"], "doc-good")
+            self.assertEqual(
+                outcomes["good"]["document"]["id"],
+                "sha256-{}".format(good_digest),
+            )
             self.assertFalse(outcomes["bad"]["retryable"])
             self.assertTrue(outcomes["pending"]["retryable"])
 
