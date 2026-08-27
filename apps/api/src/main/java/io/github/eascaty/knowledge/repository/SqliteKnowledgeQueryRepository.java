@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
@@ -37,6 +38,7 @@ public class SqliteKnowledgeQueryRepository implements KnowledgeQueryRepository 
             SqliteKnowledgeQueryRepository.class);
     private static final TypeReference<List<String>> STRING_LIST = new TypeReference<>() { };
     private static final String PUBLIC_DOCUMENT_FILTER = "d.visibility = 'public'";
+    private static final Set<Integer> SUPPORTED_SCHEMA_VERSIONS = Set.of(1, 2);
 
     private final Path databasePath;
     private final ObjectMapper objectMapper;
@@ -55,9 +57,10 @@ public class SqliteKnowledgeQueryRepository implements KnowledgeQueryRepository 
         try (Connection connection = openReadOnly();
              PreparedStatement statement = connection.prepareStatement(
                      "SELECT value FROM metadata WHERE key = 'schema_version'");
-             ResultSet result = statement.executeQuery()) {
+            ResultSet result = statement.executeQuery()) {
             Integer schemaVersion = result.next() ? Integer.valueOf(result.getString(1)) : null;
-            String status = Integer.valueOf(1).equals(schemaVersion) ? "UP" : "DOWN";
+            String status = schemaVersion != null
+                    && SUPPORTED_SCHEMA_VERSIONS.contains(schemaVersion) ? "UP" : "DOWN";
             return new HealthStatus(status, "personal-knowledge-service", "available", schemaVersion);
         } catch (SQLException exception) {
             LOGGER.warn(

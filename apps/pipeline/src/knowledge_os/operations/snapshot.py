@@ -6,6 +6,7 @@ import hashlib
 import os
 import sqlite3
 import tempfile
+from contextlib import ExitStack, closing
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -70,9 +71,17 @@ def create_sqlite_snapshot(
     temporary = Path(temporary_name)
     created_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     try:
-        source = sqlite3.connect(_readonly_uri(source_path), uri=True, timeout=5.0)
-        destination = sqlite3.connect(str(temporary), timeout=5.0)
-        try:
+        with ExitStack() as stack:
+            source = stack.enter_context(
+                closing(
+                    sqlite3.connect(
+                        _readonly_uri(source_path), uri=True, timeout=5.0
+                    )
+                )
+            )
+            destination = stack.enter_context(
+                closing(sqlite3.connect(str(temporary), timeout=5.0))
+            )
             source.backup(destination)
             destination.commit()
             integrity_rows = [
@@ -85,10 +94,6 @@ def create_sqlite_snapshot(
                         "; ".join(integrity_rows[:5])
                     )
                 )
-        finally:
-            destination.close()
-            source.close()
-
         digest = _sha256(temporary)
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         safe_prefix = "".join(

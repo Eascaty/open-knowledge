@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shutil
@@ -35,6 +36,7 @@ def sample_data():
         "documents": [
             {
                 "id": "public",
+                "source_id": "source-shared",
                 "title": "公开文档",
                 "summary": "公开摘要",
                 "content": "PUBLIC_ONLY",
@@ -47,6 +49,12 @@ def sample_data():
                 "evidence": [],
                 "tags": ["公开"],
                 "visibility": "public",
+                "section_index": 1,
+                "heading_path": ["公开资料", "第一节"],
+                "source_line_start": 10,
+                "source_line_end": 20,
+                "body_sha256": hashlib.sha256(b"PUBLIC_ONLY").hexdigest(),
+                "splitter_version": "markdown-h2-v1",
             },
             {
                 "id": "private",
@@ -82,6 +90,13 @@ class SiteBuilderTests(unittest.TestCase):
             self.assertNotIn("PRIVATE_SENTINEL", payload)
             self.assertNotIn("X-Amz-Signature", payload)
             self.assertNotIn("secret", payload)
+            document = json.loads(payload)["documents"][0]
+            self.assertEqual(document["section_index"], 1)
+            self.assertEqual(document["heading_path"], ["公开资料", "第一节"])
+            self.assertEqual(document["source_line_start"], 10)
+            self.assertEqual(document["source_line_end"], 20)
+            self.assertEqual(document["splitter_version"], "markdown-h2-v1")
+            self.assertRegex(document["body_sha256"], r"^[0-9a-f]{64}$")
 
     def test_private_bundle_is_noindex_and_does_not_cache_data(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def utc_now() -> str:
@@ -48,6 +48,10 @@ def initialize_database(connection: sqlite3.Connection) -> None:
             existing_version = int(version_row[0])
         except (TypeError, ValueError) as exc:
             raise RuntimeError("database schema_version is invalid") from exc
+        if existing_version == 1:
+            raise RuntimeError(
+                "database schema v1 requires an explicit verified migration to v2"
+            )
         if existing_version != SCHEMA_VERSION:
             raise RuntimeError(
                 "unsupported database schema_version {} (expected {})".format(
@@ -90,8 +94,18 @@ def initialize_database(connection: sqlite3.Connection) -> None:
         );
 
         CREATE TABLE IF NOT EXISTS documents (
-            id TEXT PRIMARY KEY REFERENCES sources(id) ON DELETE CASCADE,
-            source_id TEXT NOT NULL UNIQUE REFERENCES sources(id) ON DELETE CASCADE,
+            id TEXT PRIMARY KEY,
+            source_id TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+            section_index INTEGER NOT NULL DEFAULT 0 CHECK (section_index >= 0),
+            heading_path_json TEXT NOT NULL DEFAULT '[]',
+            source_line_start INTEGER CHECK (
+                source_line_start IS NULL OR source_line_start > 0
+            ),
+            source_line_end INTEGER CHECK (
+                source_line_end IS NULL OR source_line_end >= source_line_start
+            ),
+            body_sha256 TEXT NOT NULL DEFAULT '',
+            splitter_version TEXT NOT NULL DEFAULT 'single-v1',
             title TEXT NOT NULL,
             normalized_path TEXT NOT NULL,
             body TEXT NOT NULL,
@@ -103,8 +117,12 @@ def initialize_database(connection: sqlite3.Connection) -> None:
             model_name TEXT NOT NULL DEFAULT 'rules-v1',
             prompt_version TEXT NOT NULL DEFAULT 'extract-v1',
             created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
+            updated_at TEXT NOT NULL,
+            UNIQUE(source_id, section_index)
         );
+
+        CREATE INDEX IF NOT EXISTS documents_source_idx
+        ON documents(source_id, section_index);
 
         CREATE TABLE IF NOT EXISTS placements (
             document_id TEXT PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,

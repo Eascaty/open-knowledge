@@ -152,10 +152,12 @@ def _result(root: Path) -> AutomationResult:
         project_root=str(root),
         ingested=1,
         duplicates=0,
+        ingest_failed=0,
         jobs_claimed=1,
         jobs_completed=1,
         jobs_retried=0,
         jobs_failed=0,
+        jobs_pending=0,
         documents=1,
         site_output=str(root / "workspace" / "site" / "dist"),
         gate_allowed=True,
@@ -604,8 +606,8 @@ class LocalManagerTests(unittest.TestCase):
                 manager.public_state()["last_result"]["jobs_pending"], 0
             )
 
-            result.jobs_retried = 1
-            result.to_dict.return_value["jobs_retried"] = 1
+            result.jobs_pending = 1
+            result.to_dict.return_value["jobs_pending"] = 1
             with mock.patch.object(
                 manager,
                 "_settle_upload_attempt",

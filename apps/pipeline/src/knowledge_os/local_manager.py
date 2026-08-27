@@ -105,11 +105,13 @@ def _public_state(state: Mapping[str, Any]) -> Dict[str, Any]:
             "ok",
             "ingested",
             "duplicates",
+            "ingest_failed",
             "jobs_claimed",
             "jobs_completed",
             "jobs_retried",
             "jobs_pending",
             "jobs_failed",
+            "jobs_pending",
             "documents",
             "gate_allowed",
             "health_status",
@@ -471,19 +473,27 @@ class LocalKnowledgeManager:
             jobs_pending = int(
                 getattr(result, "jobs_pending", result.jobs_retried)
             )
-            checks_passed = result.gate_allowed and result.health_status != "FAIL"
-            partial_success = (
-                result.jobs_failed > 0
-                and result.jobs_retried == 0
-                and jobs_pending == 0
+            raw_ingest_failed = getattr(result, "ingest_failed", 0)
+            ingest_failed = (
+                int(raw_ingest_failed)
+                if isinstance(raw_ingest_failed, int)
+                and not isinstance(raw_ingest_failed, bool)
+                else 0
             )
+            terminal_failures = int(result.jobs_failed) + ingest_failed
+            checks_passed = result.gate_allowed and result.health_status != "FAIL"
             if (
                 settlement["retryable"]
                 or jobs_pending
                 or not checks_passed
-                or (not result.ok and not partial_success)
             ):
                 raise ManagerError("pipeline has unfinished work or failed checks")
+            if (
+                not result.ok
+                and terminal_failures == 0
+                and not settlement["permanent"]
+            ):
+                raise ManagerError("pipeline checks did not pass")
         except Exception as exc:
             traceback.print_exc()
             if not settled:
@@ -497,10 +507,15 @@ class LocalKnowledgeManager:
                 last_error=_safe_error(exc),
             )
             return False
+        isolated = terminal_failures + int(settlement["permanent"])
         self._save(
-            status="running",
+            status="degraded" if isolated else "running",
             last_success_at=_utc_now(),
-            last_error=None,
+            last_error=(
+                "有 {} 项资料已隔离；其他成功资料仍可使用。".format(isolated)
+                if isolated
+                else None
+            ),
             last_result=result.to_dict(),
             successful_inbox_fingerprint=fingerprint,
         )

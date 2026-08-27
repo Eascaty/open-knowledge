@@ -231,21 +231,35 @@ def extract_source(path: Path, original_name: str) -> Tuple[str, str]:
 
 def _normalized_markdown(
     *,
+    document_id: str,
     source_id: str,
     sha256: str,
     title: str,
     original_name: str,
     imported_at: str,
     body: str,
+    section_index: int = 0,
+    heading_path: Tuple[str, ...] = (),
+    source_line_start: Optional[int] = None,
+    source_line_end: Optional[int] = None,
+    body_sha256: str = "",
+    splitter_version: str = "single-v1",
 ) -> str:
     frontmatter = {
-        "id": source_id,
+        "id": document_id,
+        "source_id": source_id,
         "source_sha256": sha256,
         "title": title,
         "original_name": original_name,
         "imported_at": imported_at,
         "visibility": "private",
         "generated_by": "knowledge-os/extract-v1",
+        "section_index": section_index,
+        "heading_path": list(heading_path),
+        "source_line_start": source_line_start,
+        "source_line_end": source_line_end,
+        "body_sha256": body_sha256,
+        "splitter_version": splitter_version,
     }
     lines = ["---"]
     for key, value in frontmatter.items():

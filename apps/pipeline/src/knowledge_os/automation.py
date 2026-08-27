@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -19,8 +20,9 @@ from .config import (
     initialize_layout,
     load_runtime,
     load_taxonomy,
+    atomic_write_json,
 )
-from .ingest import discover_files, ingest_file
+from .ingest import IngestError, discover_files, ingest_file
 from .knowledge import build_site_data, process_jobs
 from .operations import (
     ProjectLock,
@@ -36,23 +38,24 @@ class AutomationResult:
     project_root: str
     ingested: int
     duplicates: int
+    ingest_failed: int
     jobs_claimed: int
     jobs_completed: int
     jobs_retried: int
     jobs_failed: int
+    jobs_pending: int
     documents: int
     site_output: str
     gate_allowed: bool
     health_status: str
     health_report: str
     network_requests: int = 0
-    jobs_pending: int = 0
 
     @property
     def ok(self) -> bool:
         return (
             self.jobs_failed == 0
-            and self.jobs_retried == 0
+            and self.ingest_failed == 0
             and self.jobs_pending == 0
             and self.gate_allowed
             and self.health_status != "FAIL"
@@ -227,12 +230,29 @@ def run_full_pipeline(
             db.sync_taxonomy(connection, taxonomy)
             ingested = 0
             duplicates = 0
+            ingest_failed = 0
             for source in _inbox_sources(paths):
-                result = ingest_file(connection, paths, source, runtime)
-                if result.duplicate:
-                    duplicates += 1
-                else:
-                    ingested += 1
+                try:
+                    result = ingest_file(connection, paths, source, runtime)
+                    if result.duplicate:
+                        duplicates += 1
+                    else:
+                        ingested += 1
+                except (IngestError, OSError, ValueError) as exc:
+                    ingest_failed += 1
+                    identity = hashlib.sha256(
+                        source.name.encode("utf-8", errors="replace")
+                    ).hexdigest()[:20]
+                    atomic_write_json(
+                        paths.quarantine_dir / f"ingest-{identity}.json",
+                        {
+                            "stage": "ingest",
+                            "source_name": source.name,
+                            "error_type": type(exc).__name__,
+                            "recorded_at": db.utc_now(),
+                            "note": "原始收件箱文件未修改；修复后可自动重试。",
+                        },
+                    )
             summary = process_jobs(
                 connection,
                 paths,
@@ -240,6 +260,14 @@ def run_full_pipeline(
                 taxonomy,
                 adapter_from_runtime(runtime),
                 max_jobs=max_jobs,
+            )
+            queue_status = db.status_summary(connection)
+            jobs_failed = max(
+                int(summary.failed),
+                int(queue_status["job_status"].get("failed", 0)),
+            )
+            jobs_pending = max(
+                int(summary.pending), int(queue_status["jobs_pending"])
             )
             canonical = build_site_data(
                 connection,
@@ -287,11 +315,12 @@ def run_full_pipeline(
         project_root=str(paths.root),
         ingested=ingested,
         duplicates=duplicates,
+        ingest_failed=ingest_failed,
         jobs_claimed=summary.claimed,
         jobs_completed=summary.completed,
         jobs_retried=summary.retried,
-        jobs_failed=summary.failed,
-        jobs_pending=summary.pending,
+        jobs_failed=jobs_failed,
+        jobs_pending=jobs_pending,
         documents=document_count,
         site_output=str(site_output),
         gate_allowed=gate.allowed,

@@ -11,18 +11,28 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 from .schema import SCHEMA_VERSION, utc_now
 from .records import add_event
 
-def upsert_document(
+
+def _upsert_document_row(
     connection: sqlite3.Connection, document: Mapping[str, Any]
 ) -> None:
     now = utc_now()
     connection.execute(
         """
         INSERT INTO documents(
-            id, source_id, title, normalized_path, body, summary,
+            id, source_id, section_index, heading_path_json,
+            source_line_start, source_line_end, body_sha256,
+            splitter_version, title, normalized_path, body, summary,
             key_points_json, tags_json, visibility, model_name,
             prompt_version, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
+            source_id=excluded.source_id,
+            section_index=excluded.section_index,
+            heading_path_json=excluded.heading_path_json,
+            source_line_start=excluded.source_line_start,
+            source_line_end=excluded.source_line_end,
+            body_sha256=excluded.body_sha256,
+            splitter_version=excluded.splitter_version,
             title=excluded.title,
             normalized_path=excluded.normalized_path,
             body=excluded.body,
@@ -37,6 +47,12 @@ def upsert_document(
         (
             document["id"],
             document["source_id"],
+            int(document.get("section_index", 0)),
+            json.dumps(document.get("heading_path", []), ensure_ascii=False),
+            document.get("source_line_start"),
+            document.get("source_line_end"),
+            document.get("body_sha256", ""),
+            document.get("splitter_version", "single-v1"),
             document["title"],
             document["normalized_path"],
             document["body"],
@@ -50,9 +66,76 @@ def upsert_document(
             now,
         ),
     )
+
+
+def upsert_document(
+    connection: sqlite3.Connection, document: Mapping[str, Any]
+) -> None:
+    _upsert_document_row(connection, document)
     connection.execute(
         "UPDATE sources SET status='normalized', last_error=NULL WHERE id=?",
         (document["source_id"],),
+    )
+    connection.commit()
+
+
+def replace_source_documents(
+    connection: sqlite3.Connection,
+    source_id: str,
+    documents: Sequence[Mapping[str, Any]],
+) -> List[Tuple[str, str]]:
+    """Atomically reconcile every derived card for one immutable source."""
+
+    if not documents:
+        raise ValueError("a source must produce at least one document")
+    ids = [str(document["id"]) for document in documents]
+    section_indexes = [int(document.get("section_index", 0)) for document in documents]
+    if len(ids) != len(set(ids)) or len(section_indexes) != len(set(section_indexes)):
+        raise ValueError("document ids and section indexes must be unique per source")
+    if any(str(document["source_id"]) != source_id for document in documents):
+        raise ValueError("all documents must belong to the reconciled source")
+    old_rows = connection.execute(
+        "SELECT id, normalized_path FROM documents WHERE source_id=?",
+        (source_id,),
+    ).fetchall()
+    stale = [row for row in old_rows if str(row["id"]) not in set(ids)]
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        for row in stale:
+            connection.execute(
+                "DELETE FROM documents_fts WHERE document_id=?", (row["id"],)
+            )
+            connection.execute("DELETE FROM documents WHERE id=?", (row["id"],))
+        for document in documents:
+            _upsert_document_row(connection, document)
+        connection.execute(
+            "UPDATE sources SET status='normalized', last_error=NULL WHERE id=?",
+            (source_id,),
+        )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    return [
+        (str(row["id"]), str(row["normalized_path"])) for row in stale
+    ]
+
+
+def documents_by_source(
+    connection: sqlite3.Connection, source_id: str
+) -> List[sqlite3.Row]:
+    return connection.execute(
+        "SELECT * FROM documents WHERE source_id=? ORDER BY section_index, id",
+        (source_id,),
+    ).fetchall()
+
+
+def mark_source_status(
+    connection: sqlite3.Connection, source_id: str, status: str
+) -> None:
+    connection.execute(
+        "UPDATE sources SET status=?, last_error=NULL WHERE id=?",
+        (status, source_id),
     )
     connection.commit()
 
@@ -76,10 +159,6 @@ def place_document(
             classified_at=excluded.classified_at
         """,
         (document_id, node_id, confidence, method, utc_now()),
-    )
-    connection.execute(
-        "UPDATE sources SET status='classified', last_error=NULL WHERE id=?",
-        (document_id,),
     )
     connection.commit()
 
@@ -117,7 +196,7 @@ def update_document_enrichment(
 def index_document(connection: sqlite3.Connection, document_id: str) -> None:
     row = connection.execute(
         """
-        SELECT d.id, d.title, d.body, d.tags_json, n.path_json
+        SELECT d.id, d.source_id, d.title, d.body, d.tags_json, n.path_json
         FROM documents d
         JOIN placements p ON p.document_id=d.id
         JOIN nodes n ON n.id=p.node_id
@@ -144,11 +223,12 @@ def index_document(connection: sqlite3.Connection, document_id: str) -> None:
             " / ".join(json.loads(row["path_json"])),
         ),
     )
-    connection.execute(
-        "UPDATE sources SET status='completed', last_error=NULL WHERE id=?",
-        (document_id,),
+    add_event(
+        connection,
+        "document_indexed",
+        source_id=row["source_id"],
+        details={"document_id": document_id},
     )
-    add_event(connection, "document_indexed", source_id=document_id)
     connection.commit()
 
 
@@ -242,11 +322,16 @@ def status_summary(connection: sqlite3.Connection) -> Dict[str, Any]:
             connection.execute("SELECT COUNT(*) FROM relations").fetchone()[0]
         ),
     }
+    job_status = grouped("jobs", "status")
     return {
         "schema_version": SCHEMA_VERSION,
         "counts": counts,
         "source_status": grouped("sources", "status"),
-        "job_status": grouped("jobs", "status"),
+        "job_status": job_status,
+        "jobs_pending": sum(
+            int(job_status.get(name, 0))
+            for name in ("queued", "retry", "running")
+        ),
         "last_event_at": connection.execute(
             "SELECT MAX(happened_at) FROM events"
         ).fetchone()[0],
