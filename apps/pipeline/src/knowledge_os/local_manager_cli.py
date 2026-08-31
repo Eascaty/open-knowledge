@@ -53,6 +53,37 @@ def _prepare_start_state(paths: ProjectPaths, instance_id: str, port: int) -> No
     _write_state(_state_path(paths), state)
 
 
+def _restore_start_state(
+    paths: ProjectPaths, previous: Mapping[str, Any], instance_id: str
+) -> None:
+    """Roll back only the provisional state created by this start attempt."""
+
+    path = _state_path(paths)
+    current = _read_state(path)
+    if current.get("instance_id") != instance_id:
+        return
+    if previous:
+        _write_state(path, previous)
+        return
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def _stop_failed_child(process: Optional[subprocess.Popen[bytes]]) -> None:
+    """Avoid leaving an untracked detached child after startup verification fails."""
+
+    if process is None or process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=2.0)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=2.0)
+
+
 def _print_status(status: Mapping[str, Any], *, as_json: bool) -> None:
     if as_json:
         print(json.dumps(dict(status), ensure_ascii=False, indent=2))
@@ -78,7 +109,9 @@ def _print_status(status: Mapping[str, Any], *, as_json: bool) -> None:
 def _command_start(arguments: argparse.Namespace) -> int:
     paths = ProjectPaths.from_root(arguments.root)
     initialize_layout(paths)
-    live = _probe_state(_read_state(_state_path(paths)))
+    state_path = _state_path(paths)
+    previous = _read_state(state_path)
+    live = _probe_state(previous)
     if live is not None:
         _print_status(live, as_json=arguments.json)
         if not arguments.no_open:
@@ -90,55 +123,65 @@ def _command_start(arguments: argparse.Namespace) -> int:
         )
 
     instance_id = secrets.token_hex(16)
-    _prepare_start_state(paths, instance_id, arguments.port)
+    process: Optional[subprocess.Popen[bytes]] = None
     log_path = _log_path(paths)
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    command = [
-        sys.executable,
-        "-B",
-        "-m",
-        "knowledge_os.local_manager_cli",
-        "--root",
-        str(paths.root),
-        "_serve",
-        "--instance-id",
-        instance_id,
-        "--port",
-        str(arguments.port),
-        "--poll-seconds",
-        str(arguments.poll_seconds),
-        "--settle-seconds",
-        str(arguments.settle_seconds),
-        "--retry-seconds",
-        str(arguments.retry_seconds),
-    ]
-    with log_path.open("ab", buffering=0) as log_handle:
-        try:
-            log_path.chmod(0o600)
-        except OSError:
-            pass
-        process = subprocess.Popen(
-            command,
-            cwd=str(paths.root),
-            stdin=subprocess.DEVNULL,
-            stdout=log_handle,
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
-            close_fds=True,
-        )
-    deadline = time.monotonic() + arguments.wait_seconds
-    live = None
-    while time.monotonic() < deadline:
-        state = _read_state(_state_path(paths))
-        if state.get("instance_id") == instance_id:
-            live = _probe_state(state)
-            if live is not None:
+    try:
+        _prepare_start_state(paths, instance_id, arguments.port)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        command = [
+            sys.executable,
+            "-B",
+            "-m",
+            "knowledge_os.local_manager_cli",
+            "--root",
+            str(paths.root),
+            "_serve",
+            "--instance-id",
+            instance_id,
+            "--port",
+            str(arguments.port),
+            "--poll-seconds",
+            str(arguments.poll_seconds),
+            "--settle-seconds",
+            str(arguments.settle_seconds),
+            "--retry-seconds",
+            str(arguments.retry_seconds),
+        ]
+        with log_path.open("ab", buffering=0) as log_handle:
+            try:
+                log_path.chmod(0o600)
+            except OSError:
+                pass
+            process = subprocess.Popen(
+                command,
+                cwd=str(paths.root),
+                stdin=subprocess.DEVNULL,
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+                close_fds=True,
+            )
+        deadline = time.monotonic() + arguments.wait_seconds
+        live = None
+        while time.monotonic() < deadline:
+            state = _read_state(state_path)
+            if state.get("instance_id") == instance_id:
+                live = _probe_state(state)
+                if live is not None:
+                    break
+            if process.poll() is not None:
                 break
-        if process.poll() is not None:
-            break
-        time.sleep(0.1)
-    if live is None:
-        raise ManagerError("本地知识管家未能启动；请查看 {}".format(log_path))
+            time.sleep(0.1)
+        if live is None:
+            raise ManagerError(
+                "本地知识管家未能启动；请查看 {}".format(log_path)
+            )
+    except BaseException:
+        try:
+            _stop_failed_child(process)
+        finally:
+            _restore_start_state(paths, previous, instance_id)
+        raise
     _print_status(live, as_json=arguments.json)
     if not arguments.no_open:
         webbrowser.open(str(live["url"]))

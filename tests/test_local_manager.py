@@ -10,6 +10,7 @@ import threading
 import time
 import unittest
 import urllib.parse
+from argparse import Namespace
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, BinaryIO, Callable, Dict, Iterator, Optional
@@ -35,10 +36,12 @@ from knowledge_os.local_manager import (
     DEFAULT_HOST,
     STATUS_PATH,
     LocalKnowledgeManager,
+    ManagerError,
     _request_json,
     _state_path,
     inbox_fingerprint,
 )
+from knowledge_os.local_manager_cli import _command_start
 
 
 class _HttpManagerStub:
@@ -971,6 +974,57 @@ class LocalManagerTests(unittest.TestCase):
                 manager.request_stop()
                 thread.join(timeout=5.0)
             self.assertFalse(thread.is_alive())
+
+    def test_cli_failed_start_restores_state_and_stops_detached_child(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            paths = ProjectPaths.from_root(root)
+            initialize_layout(paths)
+            previous = {
+                "service": "personal-knowledge-manager",
+                "instance_id": "previous-instance",
+                "control_token": "p" * 32,
+                "status": "running",
+                "host": DEFAULT_HOST,
+                "port": 8765,
+                "url": "http://127.0.0.1:8765/",
+                "last_success_at": "2026-08-30T00:00:00+00:00",
+            }
+            state_path = _state_path(paths)
+            state_path.write_text(json.dumps(previous), encoding="utf-8")
+            process = mock.Mock()
+            process.poll.return_value = None
+            process.wait.return_value = 0
+            arguments = Namespace(
+                root=root,
+                port=8765,
+                poll_seconds=2.0,
+                settle_seconds=3.0,
+                retry_seconds=30.0,
+                wait_seconds=0.0,
+                no_open=True,
+                json=True,
+            )
+
+            with mock.patch(
+                "knowledge_os.local_manager_cli._probe_state", return_value=None
+            ), mock.patch(
+                "knowledge_os.local_manager_cli._port_is_open", return_value=False
+            ), mock.patch(
+                "knowledge_os.local_manager_cli.secrets.token_hex",
+                return_value="failed-instance",
+            ), mock.patch(
+                "knowledge_os.local_manager_cli.subprocess.Popen",
+                return_value=process,
+            ):
+                with self.assertRaises(ManagerError):
+                    _command_start(arguments)
+
+            self.assertEqual(
+                json.loads(state_path.read_text(encoding="utf-8")), previous
+            )
+            process.terminate.assert_called_once_with()
+            process.wait.assert_called_once_with(timeout=2.0)
 
     def test_cli_reuses_one_detached_instance_and_stops_it(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
