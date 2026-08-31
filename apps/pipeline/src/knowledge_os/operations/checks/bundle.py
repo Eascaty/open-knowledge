@@ -91,6 +91,8 @@ _SITE_BUNDLE_FILES = {
     "assets/related-documents.js",
     "assets/local-ingest.css",
     "assets/local-ingest.js",
+    "assets/local-classification.css",
+    "assets/local-classification.js",
     "assets/styles.css",
     "build-meta.json",
     "data/graph.json",

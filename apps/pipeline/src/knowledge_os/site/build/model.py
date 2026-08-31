@@ -18,6 +18,8 @@ REQUIRED_ASSETS = (
     "styles.css",
     "local-ingest.js",
     "local-ingest.css",
+    "local-classification.js",
+    "local-classification.css",
 )
 
 

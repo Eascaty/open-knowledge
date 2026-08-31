@@ -39,8 +39,6 @@ from .local_inbox import (
 
 
 SERVICE_NAME = "personal-knowledge-manager"
-
-
 class ManagerError(RuntimeError):
     """Raised when the local manager cannot be safely controlled."""
 
@@ -53,8 +51,6 @@ def _utc_now() -> str:
 
 def _state_path(paths: ProjectPaths) -> Path:
     return paths.state_dir / "local-manager.json"
-
-
 def _log_path(paths: ProjectPaths) -> Path:
     return paths.runtime_logs_dir / "local-manager.log"
 
@@ -231,6 +227,7 @@ class LocalKnowledgeManager:
         self.pipeline_runner = pipeline_runner
         self.stop_event = threading.Event()
         self.state_lock = threading.Lock()
+        self.pipeline_lock = threading.Lock()
         self.server: Optional[ManagerHttpServer] = None
         self.browser_token = secrets.token_urlsafe(32)
         self.inbox_store: Optional[InboxUploadStore] = None
@@ -286,6 +283,7 @@ class LocalKnowledgeManager:
             "session_token": self.browser_token,
             "capabilities": {
                 "file_upload": True,
+                "manual_classification": True,
                 "maximum_file_bytes": store.maximum_bytes,
                 "accepted_extensions": list(store.accepted_extensions),
                 "history_limit": HISTORY_LIMIT,
@@ -462,6 +460,14 @@ class LocalKnowledgeManager:
             threading.Thread(target=self.server.shutdown, daemon=True).start()
 
     def _run_pipeline(self, fingerprint: str) -> bool:
+        if not self.pipeline_lock.acquire(blocking=False):
+            return False
+        try:
+            return self._run_pipeline_once(fingerprint)
+        finally:
+            self.pipeline_lock.release()
+
+    def _run_pipeline_once(self, fingerprint: str) -> bool:
         attempt_id = secrets.token_hex(12)
         upload_ids = self._begin_upload_attempt(attempt_id)
         self._save(status="updating", last_attempt_at=_utc_now(), last_error=None)
@@ -520,6 +526,11 @@ class LocalKnowledgeManager:
             successful_inbox_fingerprint=fingerprint,
         )
         return True
+
+    def rebuild_after_classification(self) -> bool:
+        fingerprint = inbox_fingerprint(self.paths)
+        self._save(successful_inbox_fingerprint=None)
+        return self._run_pipeline(fingerprint)
 
     def _watch_loop(self) -> None:
         candidate: Optional[str] = None

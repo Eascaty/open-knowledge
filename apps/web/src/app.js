@@ -550,6 +550,15 @@ function relatedDocumentCard(item) {
 
 function renderDocumentContext(documentItem) {
   clear(ui.contextView);
+  const classification = window.KnowledgeLocalClassification?.renderControl(
+    documentItem,
+    [...state.nodes.values()],
+  );
+  if (classification) {
+    const section = contextSection("主分类", 1);
+    section.append(classification);
+    ui.contextView.append(section);
+  }
   const source = sourceCard(documentItem);
   if (source) {
     const section = contextSection("原始来源", 1);
@@ -582,7 +591,7 @@ function renderDocumentContext(documentItem) {
     ui.contextView.append(section);
   }
 
-  if (!source && !evidence.length && !relations.length && !related.length) {
+  if (!classification && !source && !evidence.length && !relations.length && !related.length) {
     ui.contextView.append(
       element(
         "div",
@@ -1024,6 +1033,9 @@ async function start() {
     state.search = search;
     state.graph = graph;
     setupIndexes();
+    if (window.KnowledgeLocalClassification) {
+      await window.KnowledgeLocalClassification.mount({ notify: showToast });
+    }
     state.activeNodeId = data.root;
     state.expanded.add(data.root);
     ui.siteTitle.textContent = data.site.title;
