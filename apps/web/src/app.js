@@ -531,6 +531,23 @@ function relationCard(relation, currentNodeId) {
   return card;
 }
 
+function relatedDocumentCard(item) {
+  const documentItem = item.document;
+  const card = element(
+    "button",
+    { className: "relation-card related-document-card", type: "button" },
+    element(
+      "span",
+      {},
+      element("strong", { text: documentItem.title }),
+      element("small", { text: pathText(documentItem.path) }),
+    ),
+    element("span", { className: "relation-type", text: item.reason }),
+  );
+  card.addEventListener("click", () => navigateToDocument(documentItem.id));
+  return card;
+}
+
 function renderDocumentContext(documentItem) {
   clear(ui.contextView);
   const source = sourceCard(documentItem);
@@ -554,7 +571,18 @@ function renderDocumentContext(documentItem) {
     ui.contextView.append(section);
   }
 
-  if (!source && !evidence.length && !relations.length) {
+  const related = window.KnowledgeRelatedDocuments?.rankRelatedDocuments(
+    documentItem,
+    state.data.documents,
+    state.nodes,
+  ) || [];
+  if (related.length) {
+    const section = contextSection("相关知识", related.length);
+    for (const item of related) section.append(relatedDocumentCard(item));
+    ui.contextView.append(section);
+  }
+
+  if (!source && !evidence.length && !relations.length && !related.length) {
     ui.contextView.append(
       element(
         "div",

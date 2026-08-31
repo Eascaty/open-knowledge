@@ -13,6 +13,7 @@ ASSET_DIR = Path(__file__).resolve().parents[5] / "web" / "src"
 REQUIRED_ASSETS = (
     "index.html",
     "data-source.js",
+    "related-documents.js",
     "app.js",
     "styles.css",
     "local-ingest.js",

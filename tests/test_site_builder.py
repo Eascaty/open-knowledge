@@ -112,15 +112,22 @@ class SiteBuilderTests(unittest.TestCase):
             self.assertNotIn("./data/site-data.json", worker)
             self.assertIn('cache: "no-store"', worker)
             self.assertIn("./assets/data-source.js", worker)
+            self.assertIn("./assets/related-documents.js", worker)
             self.assertIn("./assets/local-ingest.js", worker)
             self.assertIn("./assets/local-ingest.css", worker)
             self.assertIn('pathname.includes("/__knowledge/")', worker)
             self.assertIn('pathname.endsWith("/build-meta.json")', worker)
             self.assertLess(
-                index.index("data-source.js"), index.index("local-ingest.js")
+                index.index("data-source.js"), index.index("related-documents.js")
+            )
+            self.assertLess(
+                index.index("related-documents.js"), index.index("local-ingest.js")
             )
             self.assertLess(index.index("local-ingest.js"), index.index("app.js"))
             self.assertTrue((output / "assets" / "data-source.js").is_file())
+            self.assertTrue(
+                (output / "assets" / "related-documents.js").is_file()
+            )
             self.assertTrue((output / "assets" / "local-ingest.js").is_file())
             self.assertTrue((output / "assets" / "local-ingest.css").is_file())
 
