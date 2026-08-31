@@ -9,6 +9,10 @@ from pathlib import Path
 from typing import Any, Optional, Sequence
 
 from ..config import ProjectPaths
+from .classification import (
+    ClassificationCorrectionError,
+    correct_document_classification,
+)
 from .gate import run_prebuild_gate
 from .health import run_health_checks, write_health_report
 from .lock import LockUnavailable, ProjectLock
@@ -109,6 +113,23 @@ def _restore_drill(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _manual_classify(arguments: argparse.Namespace) -> int:
+    root = arguments.root.expanduser().resolve()
+    with ProjectLock(root, purpose="manual-classification"):
+        result = correct_document_classification(
+            root,
+            arguments.document_id,
+            arguments.node_id,
+            expected_node_id=arguments.expected_node_id,
+            dry_run=arguments.dry_run,
+        )
+    payload = result.to_dict()
+    payload["ok"] = True
+    payload["site_rebuild_required"] = result.changed and not result.dry_run
+    _emit(payload)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m knowledge_os.operations",
@@ -139,6 +160,16 @@ def build_parser() -> argparse.ArgumentParser:
     restore.add_argument("snapshot", type=Path)
     restore.add_argument("--sha256")
     restore.set_defaults(handler=_restore_drill)
+
+    classify = commands.add_parser(
+        "manual-classify",
+        help="在项目锁内原子纠正一张知识卡的主分类",
+    )
+    classify.add_argument("document_id")
+    classify.add_argument("node_id")
+    classify.add_argument("--expected-node-id")
+    classify.add_argument("--dry-run", action="store_true")
+    classify.set_defaults(handler=_manual_classify)
     return parser
 
 
@@ -148,6 +179,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return int(arguments.handler(arguments))
     except (
         LockUnavailable,
+        ClassificationCorrectionError,
         RestoreDrillError,
         SnapshotError,
         OSError,
