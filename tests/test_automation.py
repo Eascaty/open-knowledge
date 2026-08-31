@@ -189,6 +189,33 @@ class AutomationPublicationTests(unittest.TestCase):
             )
             self.assertEqual(list(live.parent.glob(".dist-candidate-*")), [])
 
+    def test_completed_retry_publishes_after_database_queue_is_empty(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            paths = ProjectPaths.from_root(root)
+            live = paths.site_dir / "dist"
+            live.mkdir(parents=True)
+            marker = live / "old-site.txt"
+            marker.write_text("replace after retry drains", encoding="utf-8")
+
+            with mock.patch(
+                "knowledge_os.automation.process_jobs",
+                return_value=RunSummary(
+                    claimed=2,
+                    completed=1,
+                    retried=1,
+                    failed=0,
+                    pending=0,
+                ),
+            ):
+                result = run_full_pipeline(root)
+
+            self.assertTrue(result.ok)
+            self.assertEqual(result.jobs_retried, 1)
+            self.assertEqual(result.jobs_pending, 0)
+            self.assertFalse(marker.exists())
+            self.assertTrue((live / "index.html").is_file())
+
     def test_zero_job_limit_reports_pending_and_keeps_previous_site(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()

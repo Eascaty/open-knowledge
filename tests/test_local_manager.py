@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, BinaryIO, Callable, Dict, Iterator, Optional
 from unittest import mock
 
+from knowledge_os import db
 from knowledge_os.automation import AutomationResult
 from knowledge_os.config import ProjectPaths, initialize_layout
 from knowledge_os.local_http import (
@@ -28,6 +29,7 @@ from knowledge_os.local_inbox import (
     UPLOAD_HEADER,
     UPLOAD_PATH,
     InboxUploadStore,
+    database_work_pending,
 )
 from knowledge_os.local_manager import (
     DEFAULT_HOST,
@@ -761,6 +763,85 @@ class LocalManagerTests(unittest.TestCase):
 
             source.write_text("Java agent updated", encoding="utf-8")
             self.assertNotEqual(inbox_fingerprint(paths), with_source)
+
+    def test_manager_runs_requeued_database_job_when_inbox_is_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            paths = ProjectPaths.from_root(root)
+            initialize_layout(paths)
+            index = paths.site_dir / "dist" / "index.html"
+            index.parent.mkdir(parents=True, exist_ok=True)
+            index.write_text("site before migration", encoding="utf-8")
+
+            with db.connect(paths.database_file) as connection:
+                db.initialize_database(connection)
+                connection.execute(
+                    """
+                    INSERT INTO sources(
+                        id, kind, origin, original_name, raw_path, sha256,
+                        mime_type, size_bytes, imported_at, status
+                    ) VALUES(
+                        'migration-source', 'file', 'migration.md',
+                        'migration.md', 'workspace/data/raw/migration.md',
+                        ?, 'text/markdown', 1, ?, 'queued'
+                    )
+                    """,
+                    ("a" * 64, "2026-08-30T00:00:00+00:00"),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO jobs(
+                        source_id, stage, status, available_at,
+                        created_at, updated_at
+                    ) VALUES(
+                        'migration-source', 'extract', 'queued', ?, ?, ?
+                    )
+                    """,
+                    ("2026-08-30T00:00:00+00:00",) * 3,
+                )
+                connection.commit()
+
+            self.assertTrue(database_work_pending(paths))
+            completed = threading.Event()
+
+            def migration_runner(
+                runner_root: Path, *, visibility: str
+            ) -> AutomationResult:
+                self.assertEqual(runner_root, root)
+                self.assertEqual(visibility, "private")
+                with db.connect(paths.database_file) as connection:
+                    connection.execute(
+                        "UPDATE jobs SET status='done' WHERE source_id=?",
+                        ("migration-source",),
+                    )
+                    connection.execute(
+                        "UPDATE sources SET status='completed' WHERE id=?",
+                        ("migration-source",),
+                    )
+                    connection.commit()
+                completed.set()
+                return _result(runner_root)
+
+            manager = LocalKnowledgeManager(
+                root,
+                instance_id="migration-requeue-test",
+                control_token="m" * 32,
+                port=0,
+                poll_seconds=0.02,
+                settle_seconds=0.0,
+                retry_seconds=0.1,
+                pipeline_runner=migration_runner,
+            )
+            manager.state["successful_inbox_fingerprint"] = inbox_fingerprint(paths)
+            thread = threading.Thread(target=manager.serve)
+            thread.start()
+            try:
+                self.assertTrue(completed.wait(3.0))
+                _wait_for(lambda: not database_work_pending(paths))
+            finally:
+                manager.request_stop()
+                thread.join(timeout=5.0)
+            self.assertFalse(thread.is_alive())
 
     def test_manager_keeps_old_site_and_sanitizes_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
