@@ -56,6 +56,16 @@ function sessionPayload() {
   };
 }
 
+class FileStub {
+  constructor(parts, name, options = {}) {
+    this.text = parts.join("");
+    this.name = name;
+    this.type = options.type || "";
+    this.lastModified = options.lastModified || 0;
+    this.size = Buffer.byteLength(this.text, "utf8");
+  }
+}
+
 async function testPublicHostNeverProbesOrShowsWriteCapability() {
   let requested = 0;
   const { api } = loadLocalIngest();
@@ -348,6 +358,35 @@ async function testCapabilityFormatHintOnlyAdvertisesAvailableFormats() {
   );
 }
 
+async function testPastedTextBecomesAValidatedMarkdownFile() {
+  const { api } = loadLocalIngest();
+  const now = new Date("2026-08-31T08:09:10.123Z");
+  const note = api.createPastedNoteFile(
+    "  Java\nG1 调优  ",
+    "第一段\r\n\r\n## 参数\r- Xmx",
+    { FileCtor: FileStub, now },
+  );
+  assert.equal(note.name, "粘贴笔记-20260831T080910Z.md");
+  assert.equal(note.type, "text/markdown;charset=utf-8");
+  assert.equal(note.lastModified, now.getTime());
+  assert.equal(note.text, "# Java G1 调优\n\n第一段\n\n## 参数\n- Xmx\n");
+  assert.equal(note.size, Buffer.byteLength(note.text, "utf8"));
+
+  assert.throws(
+    () => api.createPastedNoteFile("", "  \n ", { FileCtor: FileStub, now }),
+    /请先粘贴要整理的内容/,
+  );
+  assert.throws(
+    () => api.createPastedNoteFile("", "x".repeat(200001), { FileCtor: FileStub, now }),
+    /超过 200,000 字限制/,
+  );
+
+  const html = fs.readFileSync("apps/web/src/index.html", "utf8");
+  assert.match(html, /id="ingest-paste" hidden/);
+  assert.match(html, /id="ingest-paste-content"[^>]*maxlength="200000"/);
+  assert.match(source, /this\.enqueueFiles\(\[file\]\)/);
+}
+
 Promise.resolve()
   .then(testPublicHostNeverProbesOrShowsWriteCapability)
   .then(testSessionProbeStrictlyValidatesManagerContract)
@@ -358,7 +397,8 @@ Promise.resolve()
   .then(testSessionStorageRestoresHistory)
   .then(testPendingDocumentSurvivesOldSnapshotRace)
   .then(testCapabilityFormatHintOnlyAdvertisesAvailableFormats)
-  .then(() => process.stdout.write("Web local ingest: 9/9 passed\n"))
+  .then(testPastedTextBecomesAValidatedMarkdownFile)
+  .then(() => process.stdout.write("Web local ingest: 10/10 passed\n"))
   .catch((error) => {
     console.error(error);
     process.exitCode = 1;
