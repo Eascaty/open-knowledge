@@ -249,3 +249,9 @@
 
 - 确认 GitHub 规范仓库已为 `Eascaty/open-knowledge`，GitHub Pages 公开演示地址为 `https://eascaty.github.io/open-knowledge/`。
 - `0.5.0` 发布候选开始同步包元数据、项目文档和安全报告入口；历史记录及既有 v1 契约标识保持不变。
+
+### v0.5.0 正式发布（2026-09-01 01:14:05 +0800）
+
+- `v0.5.0` 正式 Release 从 PR #33 合并提交 `3e19b5be887cb1c4746da3611a9924c87418c5e5` 发布；标签明确不包含随后进入 `main` 的粘贴笔记功能。
+- Release 工作流重新通过 Python、批量验收、Web、公开 Demo、Java 21、可复现 JAR 和容器构建；正式产物 `personal-knowledge-service-0.5.0.jar` 的 SHA-256 为 `c1f169e81207d5d806d15252db8444c27d3722fa306726ec0aa44e37ce0e35b5`。
+- 下载后的校验文件与 JAR 一致，GitHub build provenance 验证通过；发布资产不包含 `workspace/`、SQLite、原始资料或私密站点。
