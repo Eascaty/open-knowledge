@@ -295,7 +295,7 @@ AI 输出默认不是事实。状态包括：
 
 `apps/pipeline/src/knowledge_os/local_manager.py` 负责收件箱监听、逐文件处理关联、脱敏状态和安全停止；`local_http.py` 提供回环地址上的静态站点及网页投放控制面；`local_inbox.py` 负责大小、文件名、类型、并发、私密暂存和原子发布；`local_manager_cli.py` 负责用户命令和后台进程生命周期。它们只编排现有 `run_full_pipeline`，不复制入库、分类或建站逻辑。
 
-运行状态和日志分别位于 `workspace/data/state/local-manager.json` 与 `workspace/data/logs/local-manager.log`，都属于私密工作区。状态文件权限尽量收紧为当前用户可读写；HTTP 状态响应使用显式字段白名单。知识网站和控制接口只在本机回环地址提供，严格校验 `Host`、浏览器 `Origin` 与临时会话令牌，不提供 CORS；全部响应禁止 iframe，并对管理接口和构建版本禁用浏览器/Service Worker 缓存。端口被其他程序占用时拒绝接管；静态文件解析后必须仍位于生成站点目录内，符号链接不能借此读取项目其他文件。
+运行状态和日志分别位于 `workspace/data/state/local-manager.json` 与 `workspace/data/logs/local-manager.log`，都属于私密工作区。状态文件权限尽量收紧为当前用户可读写；HTTP 状态响应使用显式字段白名单。启动新后台时先保存上一状态，只有新实例通过身份与存活探测后才视为成功；失败时终止本次子进程并恢复上一状态，避免不可管理的孤儿进程或控制令牌丢失。知识网站和控制接口只在本机回环地址提供，严格校验 `Host`、浏览器 `Origin` 与临时会话令牌，不提供 CORS；全部响应禁止 iframe，并对管理接口和构建版本禁用浏览器/Service Worker 缓存。端口被其他程序占用时拒绝接管；静态文件解析后必须仍位于生成站点目录内，符号链接不能借此读取项目其他文件。
 
 本功能不安装系统服务、不修改项目外目录，也不依赖 Docker、Node、第三方 Python 包或外部账号。电脑重启后重新双击项目入口即可；未来若用户明确要求开机自启，再单独启用项目已有的可选 launchd 方案。
 
