@@ -139,10 +139,11 @@ def correct_document_classification(
         )
         connection.commit()
         return result
+    except ClassificationCorrectionError:
+        connection.rollback()
+        raise
     except (sqlite3.Error, ValueError, TypeError) as exc:
         connection.rollback()
-        if isinstance(exc, ClassificationCorrectionError):
-            raise
         raise ClassificationCorrectionError("classification correction failed") from exc
     except Exception:
         connection.rollback()

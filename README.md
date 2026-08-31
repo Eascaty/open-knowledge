@@ -141,6 +141,19 @@ cp tests/fixtures/java_g1.md workspace/inbox/files/
 
 打开一张知识卡时，右侧“相关知识”会自动连接同一原文拆出的其他卡片，以及具有共同标签、同一专业节点或相邻专业方向的知识。每条连接都会显示原因；这层推荐只负责辅助探索，不会修改严格的母子主路径。
 
+如果自动归类不合适，可以先在本地预演纠正，再确认写入。当前入口面向维护操作，后续网页选择器也会复用同一条安全链路：
+
+```bash
+# 先确认知识卡仍在预期的旧节点，且只预览变化
+./scripts/reclassify <知识卡ID> <目标节点ID> --expected-node-id <旧节点ID> --dry-run
+
+# 确认后执行，再由既有流水线安全重建网站
+./scripts/reclassify <知识卡ID> <目标节点ID> --expected-node-id <旧节点ID>
+./scripts/run-pipeline --visibility private
+```
+
+纠正只调整这张知识卡的主路径，并同步本地搜索索引和审计事件；不会修改原始资料、专业分类树或同一来源的其他知识卡。公开静态网站和 Java HTTP API 始终保持只读。
+
 常用命令：
 
 ```bash
