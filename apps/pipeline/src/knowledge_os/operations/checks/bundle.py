@@ -88,6 +88,7 @@ _SITE_BUNDLE_FILES = {
     "_headers",
     "assets/app.js",
     "assets/data-source.js",
+    "assets/related-documents.js",
     "assets/local-ingest.css",
     "assets/local-ingest.js",
     "assets/styles.css",

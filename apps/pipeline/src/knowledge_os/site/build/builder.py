@@ -56,6 +56,7 @@ def _validate_build(directory: Path) -> None:
         "index.html",
         "offline.html",
         "assets/data-source.js",
+        "assets/related-documents.js",
         "assets/app.js",
         "assets/styles.css",
         "assets/local-ingest.js",
@@ -148,6 +149,10 @@ def build_site(
         )
         shutil.copyfile(
             ASSET_DIR / "data-source.js", temp / "assets" / "data-source.js"
+        )
+        shutil.copyfile(
+            ASSET_DIR / "related-documents.js",
+            temp / "assets" / "related-documents.js",
         )
         shutil.copyfile(ASSET_DIR / "app.js", temp / "assets" / "app.js")
         shutil.copyfile(ASSET_DIR / "styles.css", temp / "assets" / "styles.css")

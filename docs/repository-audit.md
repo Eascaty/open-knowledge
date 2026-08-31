@@ -1,9 +1,9 @@
 # GitHub 发布后缺口审计
 
-- 日期：2026-08-30（Asia/Shanghai）
+- 日期：2026-09-01（Asia/Shanghai）
 - 仓库：`Eascaty/open-knowledge`
 - 审计范围：开源元数据、分支策略、安全功能、依赖维护、构建复现、CI、Release 与访客体验
-- 结果：仓库安全基线已在 `v0.3.1` 建立；J2/J3/J4、v0.4.0 可复现发布和第一/第二阶段工程收口均已完成验证。
+- 结果：仓库安全基线已在 `v0.3.1` 建立；J2/J3/J4、v0.4.0 与 v0.5.0 可复现发布和第一/第二阶段工程收口均已完成验证。
 
 ## 已补齐
 
@@ -35,6 +35,7 @@
 - PR #30 于 2026-08-23 合入 `main`，合并提交为 `830efd928598658bfed3a887672fa9e7d047148c`；合并后的 CI、Pages 与 CodeQL 均成功。
 - Artifact 工作流已升级到 upload v7/download v8，并在 Public Demo 检查中对固定公开 canonical 样例执行上传、下载与 SHA-256 往返验证。
 - 仓库改名后的规范地址、Pages 演示、包元数据和私密漏洞报告入口已统一为 `Eascaty/open-knowledge`；历史运维记录与既有 v1 契约标识不重写。
+- `v0.5.0` 从 PR #33 合并提交发布，完整 Release 工作流、JAR SHA-256 和 GitHub build provenance 均已独立复验。
 
 ## 有意留到后续
 

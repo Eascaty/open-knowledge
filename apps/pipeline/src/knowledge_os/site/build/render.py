@@ -140,6 +140,7 @@ def _service_worker(cache_version: str, private: bool) -> str:
         "./index.html",
         "./assets/styles.css",
         "./assets/data-source.js",
+        "./assets/related-documents.js",
         "./assets/app.js",
         "./assets/local-ingest.css",
         "./assets/local-ingest.js",

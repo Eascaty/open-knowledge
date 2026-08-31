@@ -1064,6 +1064,15 @@ kbd {
   font-size: 8px;
 }
 
+.related-document-card .relation-type {
+  max-width: 112px;
+  overflow: hidden;
+  color: #376c64;
+  background: var(--teal-soft);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .loading-state {
   display: grid;
   min-height: 440px;
