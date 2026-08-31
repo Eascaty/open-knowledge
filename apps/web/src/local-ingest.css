@@ -181,6 +181,108 @@ body.ingest-open {
   font-weight: 300;
 }
 
+.ingest-paste {
+  margin-top: 10px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+}
+
+.ingest-paste[hidden] {
+  display: none;
+}
+
+.ingest-paste summary {
+  padding: 12px 14px;
+  color: var(--teal);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 650;
+  list-style-position: inside;
+}
+
+.ingest-paste[open] summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.ingest-paste-form {
+  display: grid;
+  gap: 8px;
+  padding: 13px 14px 14px;
+}
+
+.ingest-paste-form label {
+  color: var(--ink-soft);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.ingest-paste-form label span {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.ingest-paste-form input,
+.ingest-paste-form textarea {
+  width: 100%;
+  color: var(--ink);
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  font: inherit;
+}
+
+.ingest-paste-form input {
+  min-height: 38px;
+  padding: 8px 10px;
+  font-size: 11px;
+}
+
+.ingest-paste-form textarea {
+  min-height: 132px;
+  padding: 10px;
+  resize: vertical;
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.ingest-paste-form input:focus,
+.ingest-paste-form textarea:focus {
+  border-color: var(--teal);
+  outline: 2px solid rgb(67 133 127 / 13%);
+}
+
+.ingest-paste-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ingest-paste-actions small {
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.ingest-paste-actions button {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 0 13px;
+  color: white;
+  background: var(--teal);
+  border: 0;
+  border-radius: 9px;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.ingest-paste-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .ingest-pipeline {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -468,6 +570,15 @@ body.ingest-open {
     min-height: 126px;
   }
 
+  .ingest-paste-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ingest-paste-actions button {
+    width: 100%;
+  }
+
   .ingest-file-item {
     grid-template-columns: 34px minmax(0, 1fr);
   }
@@ -512,6 +623,7 @@ body.ingest-open {
 
 @media (forced-colors: active) {
   .ingest-dropzone,
+  .ingest-paste,
   .ingest-file-item,
   .ingest-pipeline {
     border: 1px solid CanvasText;

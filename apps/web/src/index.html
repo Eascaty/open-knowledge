@@ -141,7 +141,7 @@
         </div>
 
         <div class="ingest-body">
-          <p class="ingest-description" id="ingest-description">文件只会写入这台电脑的私密收件箱；接收完成后，知识管家会自动去重、分类并更新知识网络。</p>
+          <p class="ingest-description" id="ingest-description">文件和粘贴笔记只会写入这台电脑的私密收件箱；接收完成后，知识管家会自动去重、分类并更新知识网络。</p>
 
           <button class="ingest-dropzone" id="ingest-dropzone" type="button" aria-describedby="ingest-format-hint">
             <span class="ingest-drop-icon" aria-hidden="true">＋</span>
@@ -150,11 +150,25 @@
           </button>
           <input class="visually-hidden" id="ingest-file-input" type="file" multiple tabindex="-1" aria-label="选择要投入知识库的文件">
 
+          <details class="ingest-paste" id="ingest-paste" hidden>
+            <summary>没有文件？直接粘贴文字或 Markdown</summary>
+            <form class="ingest-paste-form" id="ingest-paste-form">
+              <label for="ingest-paste-title">笔记标题 <span>选填</span></label>
+              <input id="ingest-paste-title" type="text" maxlength="120" autocomplete="off" placeholder="例如：Java G1 调优记录">
+              <label for="ingest-paste-content">笔记内容</label>
+              <textarea id="ingest-paste-content" rows="7" maxlength="200000" placeholder="粘贴聊天内容、读书笔记、代码说明或你的思考……" aria-describedby="ingest-paste-hint"></textarea>
+              <div class="ingest-paste-actions">
+                <small id="ingest-paste-hint">0 / 200,000 字；会作为 Markdown 进入同一条自动整理链路</small>
+                <button id="ingest-paste-submit" type="submit" disabled>投入知识库</button>
+              </div>
+            </form>
+          </details>
+
           <section class="ingest-pipeline" id="ingest-pipeline" aria-labelledby="ingest-pipeline-title">
             <span class="ingest-pipeline-mark" id="ingest-pipeline-mark" aria-hidden="true"></span>
             <div>
               <strong id="ingest-pipeline-title">知识管家已就绪</strong>
-              <small id="ingest-pipeline-detail">选择文件后将自动开始处理</small>
+              <small id="ingest-pipeline-detail">选择文件或粘贴文字后将自动开始处理</small>
             </div>
           </section>
 

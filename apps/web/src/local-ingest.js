@@ -13,6 +13,7 @@
   const PENDING_DOCUMENT_KEY = "knowledge-open-document-v1";
   const HISTORY_LIMIT = 24;
   const MAX_BATCH_FILES = 20;
+  const MAX_PASTE_CHARACTERS = 200000;
 
   class LocalIngestError extends Error {
     constructor(message, { status = 0, code = "request_failed" } = {}) {
@@ -248,6 +249,44 @@
     return `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   }
 
+  function normalizedPasteTitle(value) {
+    return String(value || "")
+      .normalize("NFC")
+      .replace(/[\r\n]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 120);
+  }
+
+  function pastedNoteFilename(now = new Date()) {
+    const suppliedTime = now && typeof now.getTime === "function" ? Number(now.getTime()) : NaN;
+    const date = new Date(Number.isFinite(suppliedTime) ? suppliedTime : Date.now());
+    const stamp = date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+    return `粘贴笔记-${stamp}.md`;
+  }
+
+  function createPastedNoteFile(title, content, { FileCtor = global.File, now } = {}) {
+    const body = String(content || "").replace(/\r\n?/g, "\n").trim();
+    if (!body) {
+      throw new LocalIngestError("请先粘贴要整理的内容", { code: "empty_note" });
+    }
+    if (body.length > MAX_PASTE_CHARACTERS) {
+      throw new LocalIngestError("粘贴内容超过 200,000 字限制", { code: "note_too_large" });
+    }
+    if (typeof FileCtor !== "function") {
+      throw new LocalIngestError("当前浏览器不支持直接粘贴笔记", {
+        code: "unsupported_browser",
+      });
+    }
+    const noteTitle = normalizedPasteTitle(title);
+    const markdown = `${noteTitle ? `# ${noteTitle}\n\n` : ""}${body}\n`;
+    const suppliedTime = now && typeof now.getTime === "function" ? Number(now.getTime()) : NaN;
+    return new FileCtor([markdown], pastedNoteFilename(now), {
+      type: "text/markdown;charset=utf-8",
+      lastModified: Number.isFinite(suppliedTime) ? suppliedTime : Date.now(),
+    });
+  }
+
   class LocalManagerClient {
     constructor({ fetchImpl, xhrFactory, locationLike } = {}) {
       this.fetchImpl = fetchImpl || global.fetch?.bind(global);
@@ -385,6 +424,12 @@
         dropzone: byId("ingest-dropzone"),
         formatHint: byId("ingest-format-hint"),
         input: byId("ingest-file-input"),
+        paste: byId("ingest-paste"),
+        pasteForm: byId("ingest-paste-form"),
+        pasteTitle: byId("ingest-paste-title"),
+        pasteContent: byId("ingest-paste-content"),
+        pasteHint: byId("ingest-paste-hint"),
+        pasteSubmit: byId("ingest-paste-submit"),
         pipeline: byId("ingest-pipeline"),
         pipelineTitle: byId("ingest-pipeline-title"),
         pipelineDetail: byId("ingest-pipeline-detail"),
@@ -455,6 +500,11 @@
         this.enqueueFiles(this.ui.input.files || []);
         this.ui.input.value = "";
       });
+      this.ui.pasteContent.addEventListener("input", () => this.updatePasteState());
+      this.ui.pasteForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        this.submitPastedNote();
+      });
       this.ui.clear.addEventListener("click", () => this.clearTerminal());
       for (const closer of this.document.querySelectorAll("[data-close-ingest]")) {
         closer.addEventListener("click", () => this.closeDialog());
@@ -476,6 +526,11 @@
       if (!this.session) return false;
       this.ui.input.accept = this.session.acceptedExtensions.join(",");
       this.ui.formatHint.textContent = capabilityFormatText(this.session.acceptedExtensions);
+      this.ui.paste.hidden = (
+        !this.session.acceptedExtensions.includes(".md")
+        || typeof this.window.File !== "function"
+      );
+      this.updatePasteState();
       this.ui.trigger.hidden = false;
       await this.refreshStatus(true);
       this.ensurePolling();
@@ -508,8 +563,14 @@
     }
 
     focusableDialogItems() {
-      return [...this.ui.dialog.querySelectorAll("button:not([disabled]), input:not([disabled])")]
-        .filter((item) => item.tabIndex >= 0 && !item.hidden);
+      return [...this.ui.dialog.querySelectorAll(
+        "button:not([disabled]), input:not([disabled]), textarea:not([disabled]), summary",
+      )]
+        .filter((item) => {
+          if (item.tabIndex < 0 || item.hidden || item.closest("[hidden]")) return false;
+          const closedDetails = item.closest("details:not([open])");
+          return !closedDetails || item.tagName === "SUMMARY";
+        });
     }
 
     handleKeydown(event) {
@@ -571,6 +632,41 @@
       return null;
     }
 
+    updatePasteState() {
+      const length = this.ui.pasteContent.value.length;
+      this.ui.pasteHint.textContent = `${length.toLocaleString("zh-CN")} / ${MAX_PASTE_CHARACTERS.toLocaleString("zh-CN")} 字；会作为 Markdown 进入同一条自动整理链路`;
+      this.ui.pasteSubmit.disabled = !this.ui.pasteContent.value.trim();
+    }
+
+    submitPastedNote() {
+      let file;
+      try {
+        file = createPastedNoteFile(
+          this.ui.pasteTitle.value,
+          this.ui.pasteContent.value,
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "无法创建粘贴笔记";
+        this.notify(message);
+        this.announce(message);
+        this.ui.pasteContent.focus();
+        return;
+      }
+      const error = this.validateFile(file);
+      if (error) {
+        this.notify(error);
+        this.announce(error);
+        return;
+      }
+      const outcome = this.enqueueFiles([file]);
+      if (outcome.accepted !== 1) return;
+      this.ui.pasteTitle.value = "";
+      this.ui.pasteContent.value = "";
+      this.ui.paste.open = false;
+      this.updatePasteState();
+      this.announce("粘贴笔记已加入，开始投放");
+    }
+
     enqueueFiles(fileList) {
       const files = [...fileList].slice(0, MAX_BATCH_FILES);
       let rejected = 0;
@@ -606,6 +702,7 @@
       }
       if (rejected > 0) this.notify(`${rejected} 个文件不符合投放要求`);
       this.pumpQueue();
+      return { added: added.length, accepted: added.length - rejected, rejected };
     }
 
     nextQueuedEntry() {
@@ -748,7 +845,7 @@
       const pending = this.entries.some((entry) => !isTerminal(entry));
       let status = "ready";
       let title = "知识管家已就绪";
-      let detail = "选择文件后将自动开始处理";
+      let detail = "选择文件或粘贴文字后将自动开始处理";
       if (this.activeUploads > 0) {
         status = "pending";
         title = "正在接收资料";
@@ -831,6 +928,7 @@
     LocalIngestController,
     capabilityFormatText,
     clearPendingDocumentId,
+    createPastedNoteFile,
     isTerminal,
     isLoopbackLocation,
     mount,
