@@ -12,3 +12,4 @@ node --check apps/web/src/app.js
 node tests/web/data-source.test.js
 node tests/web/related-documents.test.js
 node tests/web/local-ingest.test.js
+node tests/web/local-classification.test.js

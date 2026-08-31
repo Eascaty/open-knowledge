@@ -1,0 +1,141 @@
+.classification-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+}
+
+.classification-current {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.classification-toggle,
+.classification-preview,
+.classification-apply,
+.classification-undo,
+.classification-cancel {
+  min-height: 38px;
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+.classification-toggle,
+.classification-preview,
+.classification-apply {
+  padding: 8px 12px;
+  color: white;
+  border: 1px solid var(--teal);
+  background: var(--teal);
+  font-weight: 700;
+}
+
+.classification-toggle {
+  justify-self: start;
+  color: var(--teal);
+  background: var(--teal-soft);
+}
+
+.classification-undo {
+  justify-self: start;
+  padding: 7px 10px;
+  color: var(--ink-soft);
+  border: 1px solid var(--gold);
+  background: var(--gold-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.classification-undo.confirming {
+  color: white;
+  background: var(--gold);
+}
+
+.classification-form {
+  display: grid;
+  gap: 8px;
+}
+
+.classification-form[hidden],
+.classification-confirmation[hidden] {
+  display: none;
+}
+
+.classification-form label {
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.classification-select {
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 10px;
+  color: var(--ink);
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: var(--surface-soft);
+  font: inherit;
+}
+
+.classification-form small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.classification-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.classification-cancel {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  background: transparent;
+}
+
+.classification-toggle:disabled,
+.classification-preview:disabled,
+.classification-apply:disabled,
+.classification-undo:disabled,
+.classification-cancel:disabled,
+.classification-select:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+.classification-confirmation {
+  display: grid;
+  gap: 7px;
+  padding: 11px;
+  border: 1px solid rgb(67 133 127 / 35%);
+  border-radius: 9px;
+  background: var(--teal-soft);
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.classification-confirmation b {
+  color: var(--teal);
+}
+
+.classification-confirmation strong {
+  color: var(--ink);
+}
+
+.classification-apply {
+  margin-top: 3px;
+}
+
+@media (max-width: 680px) {
+  .classification-actions > button,
+  .classification-apply {
+    flex: 1 1 120px;
+  }
+}

@@ -144,6 +144,8 @@ def _service_worker(cache_version: str, private: bool) -> str:
         "./assets/app.js",
         "./assets/local-ingest.css",
         "./assets/local-ingest.js",
+        "./assets/local-classification.css",
+        "./assets/local-classification.js",
         "./manifest.webmanifest",
         "./offline.html",
         "./icons/icon-192.png",

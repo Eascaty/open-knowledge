@@ -6,12 +6,20 @@ import functools
 import html
 import ipaddress
 import json
+import socket
 import traceback
 import urllib.parse
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, BinaryIO, Dict, Mapping, Protocol
 
+from .local_classification import (
+    CLASSIFICATION_PATH,
+    MAX_CLASSIFICATION_BODY_BYTES,
+    BrowserClassificationError,
+    correct_browser_classification,
+    parse_classification_request,
+)
 from .local_inbox import (
     FILENAME_HEADER,
     INBOX_STATUS_PATH,
@@ -50,6 +58,8 @@ class ManagerHttpApi(Protocol):
         encoded_filename: str,
         content_length: str,
     ) -> Dict[str, Any]: ...
+
+    def rebuild_after_classification(self) -> bool: ...
 
     def request_stop(self) -> None: ...
 
@@ -229,6 +239,58 @@ class ManagerRequestHandler(SimpleHTTPRequestHandler):
             return
         self._send_json(202, {"ok": True, "upload": receipt})
 
+    def _receive_classification(self) -> None:
+        if not self._browser_authorized():
+            self._reject(403, "forbidden", "本地归类授权无效")
+            return
+        if self.headers.get("Transfer-Encoding") or self.headers.get("Content-Encoding"):
+            self._reject(415, "unsupported_media", "归类请求传输格式无效")
+            return
+        lengths = self.headers.get_all("Content-Length", [])
+        if len(lengths) != 1 or "," in lengths[0]:
+            self._reject(411, "length_required", "无法确认归类请求大小")
+            return
+        if self.headers.get("Content-Type", "").split(";", 1)[0].casefold() != "application/json":
+            self._reject(415, "unsupported_media", "归类请求格式无效")
+            return
+        try:
+            size = int(lengths[0])
+        except ValueError:
+            self._reject(400, "invalid_length", "归类请求大小格式无效")
+            return
+        if size <= 0 or size > MAX_CLASSIFICATION_BODY_BYTES:
+            self._reject(413, "invalid_size", "归类请求大小无效")
+            return
+        try:
+            self.connection.settimeout(10.0)
+            body = self.rfile.read(size)
+            if len(body) != size:
+                raise BrowserClassificationError(400, "invalid_size", "归类请求正文不完整")
+            request = parse_classification_request(body)
+            result = correct_browser_classification(self.manager.paths.root, request)
+            rebuilt = True
+            if result.changed and not result.dry_run:
+                rebuilt = self.manager.rebuild_after_classification()
+        except socket.timeout:
+            self._reject(408, "request_timeout", "归类请求接收超时")
+            return
+        except BrowserClassificationError as exc:
+            self._reject(exc.status, exc.code, exc.message)
+            return
+        except Exception:
+            traceback.print_exc()
+            self._reject(500, "classification_failed", "归类纠正失败，请稍后重试")
+            return
+        payload = result.to_dict()
+        payload.update(
+            {
+                "ok": True,
+                "site_rebuilt": rebuilt,
+                "rebuild_pending": bool(result.changed and not result.dry_run and not rebuilt),
+            }
+        )
+        self._send_json(200 if rebuilt else 202, payload)
+
     def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
         path = urllib.parse.urlsplit(self.path).path
         if path == SESSION_PATH:
@@ -247,6 +309,9 @@ class ManagerRequestHandler(SimpleHTTPRequestHandler):
             return
         if path == UPLOAD_PATH:
             self._receive_upload()
+            return
+        if path == CLASSIFICATION_PATH:
+            self._receive_classification()
             return
         if path == STOP_PATH:
             if not self._host_or_reject():

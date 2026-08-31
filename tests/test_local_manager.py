@@ -23,6 +23,7 @@ from knowledge_os.local_http import (
     SESSION_REQUEST_HEADER,
     create_manager_server,
 )
+from knowledge_os.local_classification import CLASSIFICATION_PATH
 from knowledge_os.local_inbox import (
     FILENAME_HEADER,
     INBOX_STATUS_PATH,
@@ -52,6 +53,7 @@ class _HttpManagerStub:
         self.control_token = "control-secret"
         self.received: list[Dict[str, Any]] = []
         self.stopped = False
+        self.rebuilds = 0
 
     def public_state(self) -> Dict[str, Any]:
         return {"ok": True, "status": "running", "instance_id": "http-test"}
@@ -65,6 +67,7 @@ class _HttpManagerStub:
             "session_token": self.browser_token,
             "capabilities": {
                 "file_upload": True,
+                "manual_classification": True,
                 "accepted_extensions": [".md", ".pdf"],
                 "maximum_file_bytes": 1024,
                 "history_limit": 24,
@@ -102,6 +105,10 @@ class _HttpManagerStub:
 
     def request_stop(self) -> None:
         self.stopped = True
+
+    def rebuild_after_classification(self) -> bool:
+        self.rebuilds += 1
+        return True
 
 
 @contextmanager
@@ -181,6 +188,162 @@ def _wait_for(check: Callable[[], bool], timeout: float = 5.0) -> None:
 
 
 class LocalManagerTests(unittest.TestCase):
+    def test_classification_rebuild_stays_pending_while_pipeline_is_busy(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            manager = LocalKnowledgeManager(
+                Path(temporary),
+                instance_id="classification-busy",
+                control_token="c" * 32,
+            )
+            manager._save(successful_inbox_fingerprint="previous")
+            manager.pipeline_lock.acquire()
+            try:
+                self.assertFalse(manager.rebuild_after_classification())
+            finally:
+                manager.pipeline_lock.release()
+            self.assertIsNone(manager.state["successful_inbox_fingerprint"])
+
+    def test_http_classification_previews_then_applies_with_same_origin_session(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            paths = ProjectPaths.from_root(root)
+            initialize_layout(paths)
+            with db.connect(paths.database_file) as connection:
+                db.initialize_database(connection)
+                connection.executescript(
+                    """
+                    INSERT INTO nodes(id,parent_id,name,level,path_json,locked,sort_order,active)
+                    VALUES('root',NULL,'知识',0,'["知识"]',1,0,1),
+                          ('old','root','旧分类',1,'["知识","旧分类"]',1,0,1),
+                          ('new','root','新分类',1,'["知识","新分类"]',1,1,1);
+                    INSERT INTO sources(id,kind,origin,original_name,raw_path,sha256,mime_type,size_bytes,imported_at,status)
+                    VALUES('source','file','note.md','note.md','workspace/data/raw/note.md','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','text/markdown',4,'2026-09-01T00:00:00+00:00','completed');
+                    INSERT INTO documents(id,source_id,title,normalized_path,body,tags_json,created_at,updated_at)
+                    VALUES('doc','source','测试卡','workspace/data/normalized/doc.md','正文','[]','2026-09-01T00:00:00+00:00','2026-09-01T00:00:00+00:00');
+                    INSERT INTO placements(document_id,node_id,confidence,method,classified_at)
+                    VALUES('doc','old',0.5,'rules','2026-09-01T00:00:00+00:00');
+                    INSERT INTO documents_fts(document_id,title,body,tags,taxonomy_path)
+                    VALUES('doc','测试卡','正文','','知识 / 旧分类');
+                    """
+                )
+            with _running_http_server(root) as (manager, port):
+                host = "{}:{}".format(DEFAULT_HOST, port)
+                headers = {
+                    "Host": host,
+                    "Origin": "http://{}".format(host),
+                    "Sec-Fetch-Site": "same-origin",
+                    "Content-Type": "application/json",
+                    UPLOAD_HEADER: manager.browser_token,
+                }
+                base = {
+                    "document_id": "doc",
+                    "target_node_id": "new",
+                    "expected_node_id": "old",
+                }
+                preview_status, _, preview_body = _http_request(
+                    port,
+                    "POST",
+                    CLASSIFICATION_PATH,
+                    headers=headers,
+                    body=json.dumps({**base, "action": "preview"}).encode("utf-8"),
+                )
+                with db.connect(paths.database_file) as connection:
+                    self.assertEqual(connection.execute("SELECT node_id FROM placements").fetchone()[0], "old")
+                apply_status, response_headers, apply_body = _http_request(
+                    port,
+                    "POST",
+                    CLASSIFICATION_PATH,
+                    headers=headers,
+                    body=json.dumps({**base, "action": "apply"}).encode("utf-8"),
+                )
+
+            preview = json.loads(preview_body.decode("utf-8"))
+            applied = json.loads(apply_body.decode("utf-8"))
+            self.assertEqual(preview_status, 200)
+            self.assertTrue(preview["dry_run"])
+            self.assertTrue(preview["changed"])
+            self.assertEqual(apply_status, 200)
+            self.assertFalse(applied["dry_run"])
+            self.assertTrue(applied["site_rebuilt"])
+            self.assertEqual(response_headers["cache-control"], "private, no-store, max-age=0")
+            self.assertEqual(manager.rebuilds, 1)
+            with db.connect(paths.database_file) as connection:
+                self.assertEqual(connection.execute("SELECT node_id FROM placements").fetchone()[0], "new")
+                self.assertEqual(connection.execute("SELECT COUNT(*) FROM events").fetchone()[0], 1)
+
+    def test_http_classification_rejects_cross_origin_and_extra_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            paths = ProjectPaths.from_root(root)
+            initialize_layout(paths)
+            with db.connect(paths.database_file) as connection:
+                db.initialize_database(connection)
+            with _running_http_server(root) as (manager, port):
+                host = "{}:{}".format(DEFAULT_HOST, port)
+                payload = json.dumps(
+                    {
+                        "action": "apply",
+                        "document_id": "doc",
+                        "target_node_id": "target",
+                        "expected_node_id": "old",
+                    }
+                ).encode("utf-8")
+                forbidden, _, _ = _http_request(
+                    port,
+                    "POST",
+                    CLASSIFICATION_PATH,
+                    headers={
+                        "Host": host,
+                        "Origin": "https://attacker.example",
+                        "Content-Type": "application/json",
+                        UPLOAD_HEADER: manager.browser_token,
+                    },
+                    body=payload,
+                )
+                invalid_status, _, invalid_body = _http_request(
+                    port,
+                    "POST",
+                    CLASSIFICATION_PATH,
+                    headers={
+                        "Host": host,
+                        "Origin": "http://{}".format(host),
+                        "Content-Type": "application/json",
+                        UPLOAD_HEADER: manager.browser_token,
+                    },
+                    body=json.dumps({**json.loads(payload), "unexpected": True}).encode("utf-8"),
+                )
+                wrong_media, _, _ = _http_request(
+                    port,
+                    "POST",
+                    CLASSIFICATION_PATH,
+                    headers={
+                        "Host": host,
+                        "Origin": "http://{}".format(host),
+                        "Content-Type": "text/plain",
+                        UPLOAD_HEADER: manager.browser_token,
+                    },
+                    body=payload,
+                )
+                oversized, _, _ = _http_request(
+                    port,
+                    "POST",
+                    CLASSIFICATION_PATH,
+                    headers={
+                        "Host": host,
+                        "Origin": "http://{}".format(host),
+                        "Content-Type": "application/json",
+                        UPLOAD_HEADER: manager.browser_token,
+                    },
+                    body=b" " * (8 * 1024 + 1),
+                )
+
+            self.assertEqual(forbidden, 403)
+            self.assertEqual(invalid_status, 400)
+            self.assertEqual(json.loads(invalid_body)["error"]["code"], "invalid_request")
+            self.assertEqual(wrong_media, 415)
+            self.assertEqual(oversized, 413)
+            self.assertEqual(manager.rebuilds, 0)
+
     def test_restart_requeues_processing_upload_and_rotates_browser_token(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
