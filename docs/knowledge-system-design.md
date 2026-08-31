@@ -1,8 +1,8 @@
 # 个人知识体系总体设计
 
 > 状态：活文档  
-> 版本：0.4.0
-> 更新时间：2026-08-27（Asia/Shanghai）
+> 版本：0.5.0
+> 更新时间：2026-08-31（Asia/Shanghai）
 > 项目根目录：`$HOME/AI/knowledge`
 
 ## 1. 目标
@@ -389,7 +389,7 @@ knowledge/
 
 GitHub Actions 只检出公开仓库，在隔离临时目录导入 `tests/fixtures/` 中3份固定虚构资料，生成独立 SQLite 和 public 静态站点。只有数据库、构建清单、可见性、隐私、密钥和断链门禁全部通过时，产物才会部署到 GitHub Pages。
 
-公开地址：<https://eascaty.github.io/personal-knowledge-os/>
+公开地址：<https://eascaty.github.io/open-knowledge/>
 
 该工作流不读取维护者电脑，也不能访问真实 `workspace/inbox/`、`workspace/data/state/`、`workspace/vault/` 或 `workspace/site/dist/`。
 

@@ -47,7 +47,9 @@ jobs:
           cache: maven
           cache-dependency-path: apps/api/pom.xml
       - name: Run Python and architecture tests
-        run: ./scripts/test
+        run: |
+          ./scripts/test
+          ./scripts/acceptance
       - name: Verify Web adapters and public demo
         run: |
           ./scripts/test-web

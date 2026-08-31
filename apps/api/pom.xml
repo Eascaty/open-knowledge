@@ -13,7 +13,7 @@
 
     <groupId>io.github.eascaty</groupId>
     <artifactId>personal-knowledge-service</artifactId>
-    <version>0.4.0</version>
+    <version>0.5.0</version>
     <name>personal-knowledge-service</name>
     <description>Personal Knowledge OS read-only API</description>
 

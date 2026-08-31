@@ -6,7 +6,7 @@
 
 ## 报告漏洞
 
-请不要用公开 Issue 报告可能导致私人知识、凭据或本地文件泄露的漏洞。请使用仓库 `Security` 页面中的 [Report a vulnerability](https://github.com/Eascaty/personal-knowledge-os/security/advisories/new) 私密提交；如果该功能暂时不可用，请通过维护者 GitHub 主页联系并只描述最小复现信息。
+请不要用公开 Issue 报告可能导致私人知识、凭据或本地文件泄露的漏洞。请使用仓库 `Security` 页面中的 [Report a vulnerability](https://github.com/Eascaty/open-knowledge/security/advisories/new) 私密提交；如果该功能暂时不可用，请通过维护者 GitHub 主页联系并只描述最小复现信息。
 
 报告中请包含：
 

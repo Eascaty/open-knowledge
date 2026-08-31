@@ -1,5 +1,5 @@
 blank_issues_enabled: false
 contact_links:
   - name: 私密安全报告
-    url: https://github.com/Eascaty/personal-knowledge-os/security/advisories/new
+    url: https://github.com/Eascaty/open-knowledge/security/advisories/new
     about: 涉及私人知识、凭据或本地文件泄露时，请勿创建公开 Issue。
