@@ -295,6 +295,8 @@ class QueueCompletionSemanticsTests(unittest.TestCase):
             root = Path(temporary)
             paths = ProjectPaths.from_root(root)
             initialize_layout(paths)
+            with db.connect(paths.database_file) as connection:
+                db.initialize_database(connection)
             called = threading.Event()
             calls = []
 

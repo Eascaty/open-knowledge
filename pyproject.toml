@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "local-knowledge-os"
-version = "0.4.0"
+version = "0.5.0"
 description = "Local-first, zero-paid-API personal knowledge pipeline"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -21,9 +21,9 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Eascaty/personal-knowledge-os"
-Repository = "https://github.com/Eascaty/personal-knowledge-os"
-Issues = "https://github.com/Eascaty/personal-knowledge-os/issues"
+Homepage = "https://github.com/Eascaty/open-knowledge"
+Repository = "https://github.com/Eascaty/open-knowledge"
+Issues = "https://github.com/Eascaty/open-knowledge/issues"
 
 [project.scripts]
 knowledge-os = "knowledge_os.cli:main"

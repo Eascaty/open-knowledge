@@ -64,7 +64,7 @@ async function testPublicHostNeverProbesOrShowsWriteCapability() {
       requested += 1;
       throw new Error("should not request");
     },
-    locationLike: new URL("https://eascaty.github.io/personal-knowledge-os/"),
+    locationLike: new URL("https://eascaty.github.io/open-knowledge/"),
   });
   assert.equal(await client.openSession(), null);
   assert.equal(requested, 0);

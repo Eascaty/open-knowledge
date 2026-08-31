@@ -1,12 +1,12 @@
 # Personal Knowledge OS
 
-[![CI](https://github.com/Eascaty/personal-knowledge-os/actions/workflows/ci.yml/badge.svg)](https://github.com/Eascaty/personal-knowledge-os/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/Eascaty/personal-knowledge-os)](https://github.com/Eascaty/personal-knowledge-os/releases/latest)
+[![CI](https://github.com/Eascaty/open-knowledge/actions/workflows/ci.yml/badge.svg)](https://github.com/Eascaty/open-knowledge/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Eascaty/open-knowledge)](https://github.com/Eascaty/open-knowledge/releases/latest)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.9%2B-3776AB.svg)](pyproject.toml)
 [![Java](https://img.shields.io/badge/Java-21-ED8B00.svg)](apps/api/pom.xml)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.16-6DB33F.svg)](apps/api/pom.xml)
-[![Live Demo](https://img.shields.io/badge/Live%20Demo-GitHub%20Pages-2ea44f.svg)](https://eascaty.github.io/personal-knowledge-os/)
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-GitHub%20Pages-2ea44f.svg)](https://eascaty.github.io/open-knowledge/)
 
 把散落在电脑里的 Markdown、文本、代码、HTML、DOCX 和 PDF，离线整理成一个可搜索、可追溯、可浏览的个人知识库。
 
@@ -16,7 +16,7 @@
 
 ## 在线体验
 
-访问 **[GitHub Pages 公开 Demo](https://eascaty.github.io/personal-knowledge-os/)**，无需安装即可体验分类树、全文搜索、知识详情和关系地图。
+访问 **[GitHub Pages 公开 Demo](https://eascaty.github.io/open-knowledge/)**，无需安装即可体验分类树、全文搜索、知识详情和关系地图。
 
 在线 Demo 只使用仓库中三份虚构测试资料，由 GitHub Actions 在隔离临时目录重新构建，并在隐私、密钥、断链、数据库和 public 可见性门禁全部通过后发布。它不会读取或上传维护者本机的真实 `workspace/`、SQLite、Vault 或私密网站。
 
@@ -76,8 +76,8 @@ Python 流水线只使用标准库与系统 SQLite，不需要创建虚拟环境
 ### 2. 克隆项目
 
 ```bash
-git clone https://github.com/Eascaty/personal-knowledge-os.git
-cd personal-knowledge-os
+git clone https://github.com/Eascaty/open-knowledge.git
+cd open-knowledge
 ```
 
 ### 3. 准备一份资料
@@ -302,7 +302,7 @@ curl http://127.0.0.1:8080/actuator/health/readiness
 发布前可在本地检查版本：
 
 ```bash
-./scripts/verify-release v0.4.0
+./scripts/verify-release v0.5.0
 ```
 
 Release 产物不包含 `workspace/`、SQLite、原始资料、私密站点或凭据。
@@ -310,7 +310,7 @@ Release 产物不包含 `workspace/`、SQLite、原始资料、私密站点或�
 ## 项目目录
 
 ```text
-personal-knowledge-os/
+open-knowledge/
 ├── apps/
 │   ├── pipeline/             # Python 主流水线与唯一任务处理方
 │   ├── api/                  # Java 21 只读 API + 受限离线导入 CLI
@@ -377,4 +377,4 @@ personal-knowledge-os/
 ./scripts/java-test
 ```
 
-项目采用 [Apache License 2.0](LICENSE) 开源。安全问题请使用 GitHub 的[私密漏洞报告](https://github.com/Eascaty/personal-knowledge-os/security/advisories/new)，不要创建公开 Issue。
+项目采用 [Apache License 2.0](LICENSE) 开源。安全问题请使用 GitHub 的[私密漏洞报告](https://github.com/Eascaty/open-knowledge/security/advisories/new)，不要创建公开 Issue。

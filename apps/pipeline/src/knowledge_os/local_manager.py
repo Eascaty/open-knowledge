@@ -28,6 +28,7 @@ from .local_http import (
 from .local_inbox import (
     HISTORY_LIMIT,
     InboxUploadStore,
+    database_work_pending,
     limited_upload_history,
     max_upload_bytes,
     normalized_upload_history,
@@ -111,7 +112,6 @@ def _public_state(state: Mapping[str, Any]) -> Dict[str, Any]:
             "jobs_retried",
             "jobs_pending",
             "jobs_failed",
-            "jobs_pending",
             "documents",
             "gate_allowed",
             "health_status",
@@ -531,6 +531,8 @@ class LocalKnowledgeManager:
                 successful = self.state.get("successful_inbox_fingerprint")
             site_exists = (self.paths.site_dir / "dist" / "index.html").is_file()
             pending = not site_exists or current != successful
+            if not pending:
+                pending = database_work_pending(self.paths)
             now = time.monotonic()
             if pending:
                 if current != candidate:

@@ -7,6 +7,7 @@ import json
 import os
 import re
 import shutil
+import sqlite3
 import tempfile
 import threading
 import unicodedata
@@ -29,6 +30,27 @@ HISTORY_LIMIT = 24
 UPLOAD_CHUNK_BYTES = 1024 * 1024
 MAX_BROWSER_UPLOAD_BYTES = 64 * 1024 * 1024
 SUPPORTED_UPLOAD_EXTENSIONS = frozenset(TEXT_EXTENSIONS | {".docx", ".pdf"})
+
+
+def database_work_pending(paths: ProjectPaths) -> bool:
+    """Read pending durable work without mutating or creating the database."""
+
+    try:
+        database_uri = paths.database_file.resolve().as_uri() + "?mode=ro"
+        with sqlite3.connect(database_uri, uri=True, timeout=1.0) as connection:
+            row = connection.execute(
+                """
+                SELECT EXISTS(
+                    SELECT 1 FROM jobs
+                    WHERE status IN ('queued', 'retry', 'running')
+                )
+                """
+            ).fetchone()
+        return row is None or bool(row[0])
+    except (OSError, sqlite3.Error):
+        # Missing, locked, or unreadable state must take the normal recovery
+        # path; callers expose only a generic manager error if that path fails.
+        return True
 
 
 class InboxUploadError(RuntimeError):

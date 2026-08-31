@@ -237,3 +237,15 @@
 - 正式产物 `personal-knowledge-service-0.4.0.jar` 下载后通过 SHA-256 校验，摘要为 `4d463146880442f9cfd2647d4ae543f41a56f075d9f0533d095426fd1830c22c`；GitHub build provenance attestation 验证通过。
 - 18:24:56 +0800，PR #30 以普通合并进入受保护 `main`，合并提交为 `830efd928598658bfed3a887672fa9e7d047148c`。
 - 合并后的 CI、GitHub Pages 与 CodeQL 均成功；本记录不包含任何真实知识、SQLite 路径或私密构建信息。
+
+### 真实私密数据库迁移到 schema v2（2026-08-30 21:13:14 +0800）
+
+- 停止旧知识管家后，通过项目内显式迁移入口将真实 SQLite 从 schema v1 升级到 v2；迁移重新排队1份 Markdown 来源，未执行隐式升级。
+- 迁移前一致性快照为 `knowledge-pre-schema-v2-20260830-211314-03dca15322e2.sqlite3`，SHA-256 为 `03dca15322e2611aa18e5cf8e270339033464f11c4e4423bcca2f529b92bf76e`。
+- 隔离恢复演练返回 `integrity=ok`、外键违规0且 `live_database_modified=false`；随后手工运行流水线排空3个迁移任务，原有长文从1份文档拆为23张知识卡。
+- 重启知识管家后通过真实回环网页接口完成1份项目运行手册的上传、整理和知识定位；最终 schema v2 共2个来源、24张知识卡、待处理任务0，doctor PASS，private JSON 响应为 `no-store`。真实资料路径和内容未写入本记录。
+
+### 公开仓库规范地址同步（2026-08-30 21:14:15 +0800）
+
+- 确认 GitHub 规范仓库已为 `Eascaty/open-knowledge`，GitHub Pages 公开演示地址为 `https://eascaty.github.io/open-knowledge/`。
+- `0.5.0` 发布候选开始同步包元数据、项目文档和安全报告入口；历史记录及既有 v1 契约标识保持不变。

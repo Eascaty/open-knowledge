@@ -300,12 +300,7 @@ def run_full_pipeline(
                 candidate_roots=(candidate,),
             )
             health_path = write_health_report(health)
-            if (
-                summary.pending == 0
-                and summary.retried == 0
-                and gate.allowed
-                and health.passed
-            ):
+            if jobs_pending == 0 and gate.allowed and health.passed:
                 _publish_candidate(candidate, site_output)
         finally:
             if candidate.exists():
