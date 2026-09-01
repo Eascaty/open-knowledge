@@ -24,6 +24,7 @@ from knowledge_os.local_http import (
     create_manager_server,
 )
 from knowledge_os.local_classification import CLASSIFICATION_PATH
+from knowledge_os.local_review import REVIEW_PATH
 from knowledge_os.local_inbox import (
     FILENAME_HEADER,
     INBOX_STATUS_PATH,
@@ -68,6 +69,7 @@ class _HttpManagerStub:
             "capabilities": {
                 "file_upload": True,
                 "manual_classification": True,
+                "document_review": True,
                 "accepted_extensions": [".md", ".pdf"],
                 "maximum_file_bytes": 1024,
                 "history_limit": 24,
@@ -343,6 +345,68 @@ class LocalManagerTests(unittest.TestCase):
             self.assertEqual(wrong_media, 415)
             self.assertEqual(oversized, 413)
             self.assertEqual(manager.rebuilds, 0)
+
+    def test_http_review_previews_then_applies_with_same_origin_session(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            paths = ProjectPaths.from_root(root)
+            initialize_layout(paths)
+            with db.connect(paths.database_file) as connection:
+                db.initialize_database(connection)
+                connection.executescript(
+                    """
+                    INSERT INTO sources(id,kind,origin,original_name,raw_path,sha256,mime_type,size_bytes,imported_at,status)
+                    VALUES('source','file','note.md','note.md','workspace/data/raw/note.md','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','text/markdown',4,'2026-09-01T00:00:00+00:00','completed');
+                    INSERT INTO documents(id,source_id,title,normalized_path,body,tags_json,created_at,updated_at)
+                    VALUES('doc','source','测试卡','workspace/data/normalized/doc.md','正文','[]','2026-09-01T00:00:00+00:00','2026-09-01T00:00:00+00:00');
+                    """
+                )
+            with _running_http_server(root) as (manager, port):
+                host = "{}:{}".format(DEFAULT_HOST, port)
+                headers = {
+                    "Host": host,
+                    "Origin": "http://{}".format(host),
+                    "Sec-Fetch-Site": "same-origin",
+                    "Content-Type": "application/json",
+                    UPLOAD_HEADER: manager.browser_token,
+                }
+                base = {
+                    "document_id": "doc",
+                    "target_status": "supported",
+                    "expected_status": "unverified",
+                }
+                preview_status, _, preview_body = _http_request(
+                    port,
+                    "POST",
+                    REVIEW_PATH,
+                    headers=headers,
+                    body=json.dumps({**base, "action": "preview"}).encode("utf-8"),
+                )
+                with db.connect(paths.database_file) as connection:
+                    self.assertEqual(connection.execute("SELECT COUNT(*) FROM events").fetchone()[0], 0)
+                apply_status, response_headers, apply_body = _http_request(
+                    port,
+                    "POST",
+                    REVIEW_PATH,
+                    headers=headers,
+                    body=json.dumps({**base, "action": "apply"}).encode("utf-8"),
+                )
+
+            preview = json.loads(preview_body.decode("utf-8"))
+            applied = json.loads(apply_body.decode("utf-8"))
+            self.assertEqual(preview_status, 200)
+            self.assertTrue(preview["dry_run"])
+            self.assertEqual(preview["target_status"], "supported")
+            self.assertEqual(apply_status, 200)
+            self.assertFalse(applied["dry_run"])
+            self.assertTrue(applied["site_rebuilt"])
+            self.assertEqual(response_headers["cache-control"], "private, no-store, max-age=0")
+            self.assertEqual(manager.rebuilds, 1)
+            with db.connect(paths.database_file) as connection:
+                event = connection.execute(
+                    "SELECT event_type FROM events ORDER BY id DESC LIMIT 1"
+                ).fetchone()
+                self.assertEqual(event["event_type"], "document_review_status_changed")
 
     def test_restart_requeues_processing_upload_and_rotates_browser_token(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

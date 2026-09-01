@@ -550,6 +550,12 @@ function relatedDocumentCard(item) {
 
 function renderDocumentContext(documentItem) {
   clear(ui.contextView);
+  const review = window.KnowledgeLocalReview?.renderControl(documentItem);
+  if (review) {
+    const section = contextSection("可信状态", 1);
+    section.append(review);
+    ui.contextView.append(section);
+  }
   const classification = window.KnowledgeLocalClassification?.renderControl(
     documentItem,
     [...state.nodes.values()],
@@ -591,7 +597,7 @@ function renderDocumentContext(documentItem) {
     ui.contextView.append(section);
   }
 
-  if (!classification && !source && !evidence.length && !relations.length && !related.length) {
+  if (!review && !classification && !source && !evidence.length && !relations.length && !related.length) {
     ui.contextView.append(
       element(
         "div",
@@ -1035,6 +1041,9 @@ async function start() {
     setupIndexes();
     if (window.KnowledgeLocalClassification) {
       await window.KnowledgeLocalClassification.mount({ notify: showToast });
+    }
+    if (window.KnowledgeLocalReview) {
+      await window.KnowledgeLocalReview.mount({ notify: showToast });
     }
     state.activeNodeId = data.root;
     state.expanded.add(data.root);

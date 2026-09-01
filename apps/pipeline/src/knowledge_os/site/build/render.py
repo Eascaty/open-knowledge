@@ -146,6 +146,8 @@ def _service_worker(cache_version: str, private: bool) -> str:
         "./assets/local-ingest.js",
         "./assets/local-classification.css",
         "./assets/local-classification.js",
+        "./assets/local-review.css",
+        "./assets/local-review.js",
         "./manifest.webmanifest",
         "./offline.html",
         "./icons/icon-192.png",

@@ -284,6 +284,7 @@ class LocalKnowledgeManager:
             "capabilities": {
                 "file_upload": True,
                 "manual_classification": True,
+                "document_review": True,
                 "maximum_file_bytes": store.maximum_bytes,
                 "accepted_extensions": list(store.accepted_extensions),
                 "history_limit": HISTORY_LIMIT,

@@ -63,6 +63,8 @@ def _validate_build(directory: Path) -> None:
         "assets/local-ingest.css",
         "assets/local-classification.js",
         "assets/local-classification.css",
+        "assets/local-review.js",
+        "assets/local-review.css",
         "manifest.webmanifest",
         "service-worker.js",
         "robots.txt",
@@ -171,6 +173,14 @@ def build_site(
         shutil.copyfile(
             ASSET_DIR / "local-classification.css",
             temp / "assets" / "local-classification.css",
+        )
+        shutil.copyfile(
+            ASSET_DIR / "local-review.js",
+            temp / "assets" / "local-review.js",
+        )
+        shutil.copyfile(
+            ASSET_DIR / "local-review.css",
+            temp / "assets" / "local-review.css",
         )
         (temp / "offline.html").write_text(
             _render_index(
