@@ -20,7 +20,7 @@
     <properties>
         <java.version>21</java.version>
         <mockito.version>5.17.0</mockito.version>
-        <sqlite-jdbc.version>3.53.2.1</sqlite-jdbc.version>
+        <sqlite-jdbc.version>3.53.4.0</sqlite-jdbc.version>
     </properties>
 
     <dependencies>
