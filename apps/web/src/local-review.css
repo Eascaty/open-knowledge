@@ -1,0 +1,141 @@
+.review-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+}
+
+.review-current {
+  display: grid;
+  gap: 3px;
+  padding-left: 10px;
+  border-left: 3px solid var(--gold);
+}
+
+.review-current strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.review-current small,
+.review-form small,
+.review-confirmation small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.review-supported,
+.review-verified-by-practice {
+  border-left-color: var(--teal);
+}
+
+.review-contradicted,
+.review-deprecated {
+  border-left-color: #ad5c55;
+}
+
+.review-toggle,
+.review-preview,
+.review-apply,
+.review-cancel {
+  min-height: 38px;
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+.review-toggle,
+.review-preview,
+.review-apply {
+  padding: 8px 12px;
+  color: white;
+  border: 1px solid var(--teal);
+  background: var(--teal);
+  font-weight: 700;
+}
+
+.review-toggle {
+  justify-self: start;
+  color: var(--teal);
+  background: var(--teal-soft);
+}
+
+.review-form {
+  display: grid;
+  gap: 8px;
+}
+
+.review-form[hidden],
+.review-confirmation[hidden] {
+  display: none;
+}
+
+.review-form label {
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.review-select {
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 10px;
+  color: var(--ink);
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: var(--surface-soft);
+  font: inherit;
+}
+
+.review-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.review-cancel {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  background: transparent;
+}
+
+.review-toggle:disabled,
+.review-preview:disabled,
+.review-apply:disabled,
+.review-cancel:disabled,
+.review-select:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+.review-confirmation {
+  display: grid;
+  gap: 6px;
+  padding: 11px;
+  border: 1px solid rgb(67 133 127 / 35%);
+  border-radius: 9px;
+  background: var(--teal-soft);
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.review-confirmation b {
+  color: var(--teal);
+}
+
+.review-confirmation strong {
+  color: var(--ink);
+}
+
+.review-apply {
+  margin-top: 3px;
+}
+
+@media (max-width: 680px) {
+  .review-actions > button,
+  .review-apply {
+    flex: 1 1 120px;
+  }
+}

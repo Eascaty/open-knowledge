@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence
 from .. import db
 from ..ai import KnowledgeExtraction, RelationSuggestion
 from ..config import ProjectPaths, atomic_write_json, atomic_write_text
+from ..storage.reviews import DEFAULT_REVIEW_STATUS, review_statuses_by_document
 from .classification import Classification
 from .extraction import ExtractionError
 
@@ -349,6 +350,7 @@ def build_site_data(
             )
 
     documents: List[Dict[str, Any]] = []
+    review_statuses = review_statuses_by_document(connection)
     for row in document_rows:
         path = json.loads(row["path_json"])[1:]
         raw_origin = str(row["origin"])
@@ -400,6 +402,9 @@ def build_site_data(
                 ],
                 "tags": json.loads(row["tags_json"]),
                 "visibility": row["visibility"],
+                "status": review_statuses.get(
+                    str(row["id"]), DEFAULT_REVIEW_STATUS
+                ),
                 "relations": relations_by_document.get(str(row["id"]), []),
                 "classification": {
                     "confidence": row["confidence"],

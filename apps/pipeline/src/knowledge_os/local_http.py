@@ -28,6 +28,13 @@ from .local_inbox import (
     UPLOAD_PATH,
     InboxUploadError,
 )
+from .local_review import (
+    MAX_REVIEW_BODY_BYTES,
+    REVIEW_PATH,
+    BrowserReviewError,
+    change_browser_review,
+    parse_review_request,
+)
 
 
 DEFAULT_HOST = "127.0.0.1"
@@ -291,6 +298,67 @@ class ManagerRequestHandler(SimpleHTTPRequestHandler):
         )
         self._send_json(200 if rebuilt else 202, payload)
 
+    def _receive_review(self) -> None:
+        if not self._browser_authorized():
+            self._reject(403, "forbidden", "本地审核授权无效")
+            return
+        if self.headers.get("Transfer-Encoding") or self.headers.get(
+            "Content-Encoding"
+        ):
+            self._reject(415, "unsupported_media", "审核请求传输格式无效")
+            return
+        lengths = self.headers.get_all("Content-Length", [])
+        if len(lengths) != 1 or "," in lengths[0]:
+            self._reject(411, "length_required", "无法确认审核请求大小")
+            return
+        if (
+            self.headers.get("Content-Type", "").split(";", 1)[0].casefold()
+            != "application/json"
+        ):
+            self._reject(415, "unsupported_media", "审核请求格式无效")
+            return
+        try:
+            size = int(lengths[0])
+        except ValueError:
+            self._reject(400, "invalid_length", "审核请求大小格式无效")
+            return
+        if size <= 0 or size > MAX_REVIEW_BODY_BYTES:
+            self._reject(413, "invalid_size", "审核请求大小无效")
+            return
+        try:
+            self.connection.settimeout(10.0)
+            body = self.rfile.read(size)
+            if len(body) != size:
+                raise BrowserReviewError(
+                    400, "invalid_size", "审核请求正文不完整"
+                )
+            request = parse_review_request(body)
+            result = change_browser_review(self.manager.paths.root, request)
+            rebuilt = True
+            if result.changed and not result.dry_run:
+                rebuilt = self.manager.rebuild_after_classification()
+        except socket.timeout:
+            self._reject(408, "request_timeout", "审核请求接收超时")
+            return
+        except BrowserReviewError as exc:
+            self._reject(exc.status, exc.code, exc.message)
+            return
+        except Exception:
+            traceback.print_exc()
+            self._reject(500, "review_failed", "知识审核失败，请稍后重试")
+            return
+        payload = result.to_dict()
+        payload.update(
+            {
+                "ok": True,
+                "site_rebuilt": rebuilt,
+                "rebuild_pending": bool(
+                    result.changed and not result.dry_run and not rebuilt
+                ),
+            }
+        )
+        self._send_json(200 if rebuilt else 202, payload)
+
     def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
         path = urllib.parse.urlsplit(self.path).path
         if path == SESSION_PATH:
@@ -312,6 +380,9 @@ class ManagerRequestHandler(SimpleHTTPRequestHandler):
             return
         if path == CLASSIFICATION_PATH:
             self._receive_classification()
+            return
+        if path == REVIEW_PATH:
+            self._receive_review()
             return
         if path == STOP_PATH:
             if not self._host_or_reject():
