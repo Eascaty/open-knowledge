@@ -700,6 +700,7 @@ function readRoute() {
 
 function showSearch() {
   window.dispatchEvent(new Event("knowledge:close-ingest"));
+  window.dispatchEvent(new Event("knowledge:close-review-queue"));
   ui.searchDialog.hidden = false;
   document.body.classList.add("search-open");
   window.setTimeout(() => ui.searchInput.focus(), 0);
@@ -1044,6 +1045,13 @@ async function start() {
     }
     if (window.KnowledgeLocalReview) {
       await window.KnowledgeLocalReview.mount({ notify: showToast });
+    }
+    if (window.KnowledgeLocalReviewQueue) {
+      window.KnowledgeLocalReviewQueue.mount({
+        documents: data.documents,
+        notify: showToast,
+        openDocument: navigateToDocument,
+      });
     }
     state.activeNodeId = data.root;
     state.expanded.add(data.root);

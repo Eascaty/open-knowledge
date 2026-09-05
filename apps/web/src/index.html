@@ -15,11 +15,13 @@
     <link rel="stylesheet" href="./assets/local-ingest.css">
     <link rel="stylesheet" href="./assets/local-classification.css">
     <link rel="stylesheet" href="./assets/local-review.css">
+    <link rel="stylesheet" href="./assets/local-review-queue.css">
     <script src="./assets/data-source.js" defer></script>
     <script src="./assets/related-documents.js" defer></script>
     <script src="./assets/local-ingest.js" defer></script>
     <script src="./assets/local-classification.js" defer></script>
     <script src="./assets/local-review.js" defer></script>
+    <script src="./assets/local-review-queue.js" defer></script>
     <script src="./assets/app.js" defer></script>
   </head>
   <body>
@@ -43,6 +45,11 @@
         </button>
 
         <div class="topbar-actions">
+          <button class="review-queue-trigger" id="review-queue-trigger" type="button" aria-haspopup="dialog" aria-controls="review-queue-dialog" aria-label="打开知识复核队列" hidden>
+            <span aria-hidden="true">✓</span>
+            <span class="review-queue-trigger-label">复核</span>
+            <strong id="review-queue-count">0</strong>
+          </button>
           <button class="ingest-trigger" id="ingest-trigger" type="button" aria-haspopup="dialog" aria-controls="ingest-dialog" aria-label="投放资料到知识库" hidden>
             <span aria-hidden="true">＋</span>
             <span class="ingest-trigger-label">投放资料</span>
@@ -131,6 +138,30 @@
         </div>
         <div class="search-hint" id="search-hint">输入关键词开始搜索；支持中文连续匹配。</div>
         <ol class="search-results" id="search-results"></ol>
+      </div>
+    </section>
+
+    <section class="review-queue-dialog" id="review-queue-dialog" role="dialog" aria-modal="true" aria-labelledby="review-queue-title" aria-describedby="review-queue-summary" hidden>
+      <div class="review-queue-backdrop" data-close-review-queue></div>
+      <div class="review-queue-card">
+        <div class="review-queue-head">
+          <div>
+            <span class="eyebrow">知识质量维护</span>
+            <h2 id="review-queue-title">可信审核队列</h2>
+            <p class="review-queue-summary" id="review-queue-summary">正在统计知识状态……</p>
+          </div>
+          <button type="button" class="icon-button" data-close-review-queue aria-label="关闭可信审核队列">×</button>
+        </div>
+        <nav class="review-queue-filters" id="review-queue-filters" aria-label="按可信状态筛选"></nav>
+        <div class="review-queue-body">
+          <ol class="review-queue-list" id="review-queue-list"></ol>
+          <p class="review-queue-empty" id="review-queue-empty" hidden></p>
+          <button class="review-queue-more" id="review-queue-more" type="button" hidden>显示更多</button>
+        </div>
+        <div class="review-queue-foot">
+          <span>打开知识后，可在右侧先预览再确认可信状态。</span>
+          <button class="review-queue-done" type="button" data-close-review-queue>完成</button>
+        </div>
       </div>
     </section>
 

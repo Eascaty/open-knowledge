@@ -95,6 +95,8 @@ _SITE_BUNDLE_FILES = {
     "assets/local-classification.js",
     "assets/local-review.css",
     "assets/local-review.js",
+    "assets/local-review-queue.css",
+    "assets/local-review-queue.js",
     "assets/styles.css",
     "build-meta.json",
     "data/graph.json",

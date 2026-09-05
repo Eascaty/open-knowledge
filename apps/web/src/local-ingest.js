@@ -547,6 +547,7 @@
     openDialog() {
       if (!this.session) return;
       this.window.dispatchEvent(new Event("knowledge:close-search"));
+      this.window.dispatchEvent(new Event("knowledge:close-review-queue"));
       this.lastFocused = this.document.activeElement;
       this.ui.dialog.hidden = false;
       this.document.body.classList.add("ingest-open");
