@@ -22,6 +22,8 @@ REQUIRED_ASSETS = (
     "local-classification.css",
     "local-review.js",
     "local-review.css",
+    "local-review-queue.js",
+    "local-review-queue.css",
 )
 
 

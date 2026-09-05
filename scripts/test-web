@@ -10,9 +10,11 @@ node --check apps/web/src/related-documents.js
 node --check apps/web/src/local-ingest.js
 node --check apps/web/src/local-classification.js
 node --check apps/web/src/local-review.js
+node --check apps/web/src/local-review-queue.js
 node --check apps/web/src/app.js
 node tests/web/data-source.test.js
 node tests/web/related-documents.test.js
 node tests/web/local-ingest.test.js
 node tests/web/local-classification.test.js
 node tests/web/local-review.test.js
+node tests/web/local-review-queue.test.js

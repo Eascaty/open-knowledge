@@ -65,6 +65,8 @@ def _validate_build(directory: Path) -> None:
         "assets/local-classification.css",
         "assets/local-review.js",
         "assets/local-review.css",
+        "assets/local-review-queue.js",
+        "assets/local-review-queue.css",
         "manifest.webmanifest",
         "service-worker.js",
         "robots.txt",
@@ -181,6 +183,14 @@ def build_site(
         shutil.copyfile(
             ASSET_DIR / "local-review.css",
             temp / "assets" / "local-review.css",
+        )
+        shutil.copyfile(
+            ASSET_DIR / "local-review-queue.js",
+            temp / "assets" / "local-review-queue.js",
+        )
+        shutil.copyfile(
+            ASSET_DIR / "local-review-queue.css",
+            temp / "assets" / "local-review-queue.css",
         )
         (temp / "offline.html").write_text(
             _render_index(

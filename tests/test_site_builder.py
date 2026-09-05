@@ -115,6 +115,8 @@ class SiteBuilderTests(unittest.TestCase):
             self.assertIn("./assets/related-documents.js", worker)
             self.assertIn("./assets/local-ingest.js", worker)
             self.assertIn("./assets/local-ingest.css", worker)
+            self.assertIn("./assets/local-review-queue.js", worker)
+            self.assertIn("./assets/local-review-queue.css", worker)
             self.assertIn('pathname.includes("/__knowledge/")', worker)
             self.assertIn('pathname.endsWith("/build-meta.json")', worker)
             self.assertLess(
@@ -124,12 +126,21 @@ class SiteBuilderTests(unittest.TestCase):
                 index.index("related-documents.js"), index.index("local-ingest.js")
             )
             self.assertLess(index.index("local-ingest.js"), index.index("app.js"))
+            self.assertLess(
+                index.index("local-review-queue.js"), index.index("app.js")
+            )
             self.assertTrue((output / "assets" / "data-source.js").is_file())
             self.assertTrue(
                 (output / "assets" / "related-documents.js").is_file()
             )
             self.assertTrue((output / "assets" / "local-ingest.js").is_file())
             self.assertTrue((output / "assets" / "local-ingest.css").is_file())
+            self.assertTrue(
+                (output / "assets" / "local-review-queue.js").is_file()
+            )
+            self.assertTrue(
+                (output / "assets" / "local-review-queue.css").is_file()
+            )
 
     def test_private_worker_only_uses_install_time_shell_cache(self):
         with tempfile.TemporaryDirectory() as temporary:

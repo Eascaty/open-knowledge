@@ -372,6 +372,10 @@
     return controller?.renderControl(documentItem) || null;
   }
 
+  function isAvailable() {
+    return Boolean(controller?.session);
+  }
+
   global.KnowledgeLocalReview = Object.freeze({
     API_VERSION,
     REVIEW_OPTIONS,
@@ -379,6 +383,7 @@
     LocalReviewController,
     LocalReviewError,
     isLoopbackLocation,
+    isAvailable,
     mount,
     normalizeChange,
     normalizeSession,
