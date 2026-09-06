@@ -141,6 +141,8 @@ def _service_worker(cache_version: str, private: bool) -> str:
         "./assets/styles.css",
         "./assets/markdown-reader.js",
         "./assets/markdown-reader.css",
+        "./assets/reading-history.js",
+        "./assets/reading-actions.js",
         "./assets/data-source.js",
         "./assets/related-documents.js",
         "./assets/app.js",

@@ -45,6 +45,8 @@ function changePayload(dryRun, siteRebuilt = true) {
     document_id: "doc",
     previous_status: "unverified",
     target_status: "supported",
+    previous_note: "",
+    note: "已核对来源",
     changed: true,
     dry_run: dryRun,
     site_rebuilt: siteRebuilt,
@@ -132,7 +134,9 @@ async function testClientSendsExpectedStatusAndSession() {
     },
   });
   const session = await client.openSession();
-  await client.change(session, "preview", "doc", "supported", "unverified");
+  await client.change(
+    session, "preview", "doc", "supported", "unverified", "已核对来源", "",
+  );
   assert.equal(requests[0].options.headers["X-Knowledge-Client"], "browser-v1");
   assert.equal(requests[1].options.headers["X-Knowledge-Session"], "s".repeat(43));
   assert.deepEqual(JSON.parse(requests[1].options.body), {
@@ -140,6 +144,8 @@ async function testClientSendsExpectedStatusAndSession() {
     document_id: "doc",
     target_status: "supported",
     expected_status: "unverified",
+    note: "已核对来源",
+    expected_note: "",
   });
 }
 
@@ -151,8 +157,10 @@ async function testControlPreviewsBeforeApplyAndReloads() {
   const api = loadModule();
   const client = {
     openSession: async () => ({ token: "s".repeat(43) }),
-    change: async (_session, action, documentId, targetStatus, expectedStatus) => {
-      calls.push({ action, documentId, targetStatus, expectedStatus });
+    change: async (
+      _session, action, documentId, targetStatus, expectedStatus, note, expectedNote,
+    ) => {
+      calls.push({ action, documentId, targetStatus, expectedStatus, note, expectedNote });
       return api.normalizeChange(changePayload(action === "preview", action === "preview"));
     },
     waitUntilPublished: async () => { waitCalls += 1; return true; },
@@ -164,18 +172,30 @@ async function testControlPreviewsBeforeApplyAndReloads() {
     reload: () => { reloads += 1; },
   });
   await controller.initialize();
-  const card = controller.renderControl({ id: "doc", status: "unverified" });
+  const card = controller.renderControl({
+    id: "doc",
+    status: "unverified",
+    review: { note: "", history: [] },
+  });
   await card.find("review-toggle").emit("click");
   const select = card.find("review-select");
+  select.value = "supported";
+  await select.emit("change");
+  const note = card.find("review-note-input");
+  note.value = "已核对来源";
+  await note.emit("input");
   select.value = "supported";
   await select.emit("change");
   await card.find("review-form").emit("submit");
   assert.equal(calls.length, 1);
   assert.equal(calls[0].action, "preview");
+  assert.equal(calls[0].note, "已核对来源");
+  assert.equal(calls[0].expectedNote, "");
   assert.equal(reloads, 0);
   await card.find("review-apply").emit("click");
   assert.equal(calls.length, 2);
   assert.equal(calls[1].expectedStatus, "unverified");
+  assert.equal(calls[1].note, "已核对来源");
   assert.equal(waitCalls, 1);
   assert.equal(reloads, 1);
   assert.match(notices.at(-1), /有证据支持/);

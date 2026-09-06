@@ -18,6 +18,8 @@ REQUIRED_ASSETS = (
     "styles.css",
     "markdown-reader.js",
     "markdown-reader.css",
+    "reading-history.js",
+    "reading-actions.js",
     "local-ingest.js",
     "local-ingest.css",
     "local-classification.js",

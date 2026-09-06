@@ -12,6 +12,7 @@ from typing import Any, Mapping, Optional, Sequence, Union
 from urllib.parse import urlsplit, urlunsplit
 
 from .model import SCHEMA_VERSION, VALID_VISIBILITIES, SiteDataError
+from .review_normalize import normalize_review
 
 def _as_text(value: Any, default: str = "") -> str:
     if value is None:
@@ -399,6 +400,8 @@ def normalize_site_data(
             "evidence": _normalize_evidence(raw_document.get("evidence")),
             "updated_at": _as_text(raw_document.get("updated_at")),
         }
+        if visibility == "private":
+            document["review"] = normalize_review(raw_document.get("review"), _as_text)
         section_index = _as_optional_integer(
             raw_document.get("section_index"), minimum=0
         )

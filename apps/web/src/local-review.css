@@ -27,6 +27,14 @@
   line-height: 1.5;
 }
 
+.review-current .review-note {
+  margin: 5px 0 0;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
 .review-supported,
 .review-verified-by-practice {
   border-left-color: var(--teal);
@@ -87,6 +95,59 @@
   border-radius: 9px;
   background: var(--surface-soft);
   font: inherit;
+}
+
+.review-note-input {
+  width: 100%;
+  min-height: 88px;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: 9px 10px;
+  color: var(--ink);
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: var(--surface-soft);
+  font: inherit;
+  line-height: 1.5;
+}
+
+.review-history {
+  border-top: 1px solid var(--line);
+  padding-top: 9px;
+}
+
+.review-history summary {
+  cursor: pointer;
+  color: var(--teal);
+  font-size: 12px;
+}
+
+.review-history ol {
+  display: grid;
+  gap: 9px;
+  margin: 10px 0 0;
+  padding-left: 20px;
+}
+
+.review-history li {
+  padding-left: 3px;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.review-history li strong,
+.review-history li time {
+  margin-right: 7px;
+}
+
+.review-history li time {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.review-history li p {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
 }
 
 .review-actions {

@@ -424,6 +424,9 @@ function renderDocumentView(documentId) {
       ),
     );
   }
+  if (window.KnowledgeReadingActions) {
+    view.append(window.KnowledgeReadingActions.render(documentItem, { notify: showToast }));
+  }
   if (documentItem.key_points.length) {
     view.append(
       element(
@@ -450,11 +453,18 @@ function renderDocumentView(documentId) {
   renderTree();
 }
 
-function contextSection(title, count) {
+function contextSection(title, count, action = null) {
+  const heading = element(
+    "h3",
+    {},
+    element("span", { text: title }),
+    element("span", { text: String(count) }),
+  );
+  if (action) heading.append(action);
   return element(
     "section",
     { className: "context-section" },
-    element("h3", {}, element("span", { text: title }), element("span", { text: String(count) })),
+    heading,
   );
 }
 
@@ -543,8 +553,45 @@ function relatedDocumentCard(item) {
   return card;
 }
 
+function recentDocumentCard(entry) {
+  const documentItem = entry.document;
+  const card = element(
+    "button",
+    { className: "relation-card recent-document-card", type: "button" },
+    element(
+      "span",
+      {},
+      element("strong", { text: documentItem.title }),
+      element("small", { text: `${pathText(documentItem.path)} · ${formatDate(entry.viewedAt)}` }),
+    ),
+    element("span", { className: "relation-type", text: statusLabel(documentItem.status) }),
+  );
+  card.addEventListener("click", () => navigateToDocument(documentItem.id));
+  return card;
+}
+
 function renderDocumentContext(documentItem) {
   clear(ui.contextView);
+  const recentEntries = window.KnowledgeReadingHistory?.recentEntries(
+    state.documents,
+    { limit: 6 },
+  ) || [];
+  if (recentEntries.length) {
+    const clearRecent = element("button", {
+      className: "context-clear",
+      type: "button",
+      text: "清空",
+      "aria-label": "清空最近阅读记录",
+    });
+    clearRecent.addEventListener("click", () => {
+      window.KnowledgeReadingHistory.clear();
+      renderDocumentContext(documentItem);
+      showToast("已清空最近阅读记录");
+    });
+    const section = contextSection("最近阅读", recentEntries.length, clearRecent);
+    for (const entry of recentEntries) section.append(recentDocumentCard(entry));
+    ui.contextView.append(section);
+  }
   const review = window.KnowledgeLocalReview?.renderControl(documentItem);
   if (review) {
     const section = contextSection("可信状态", 1);
@@ -665,6 +712,7 @@ function navigateToNode(nodeId, updateHash = true) {
 function navigateToDocument(documentId, updateHash = true) {
   const documentItem = state.documents.get(documentId);
   if (!documentItem) return;
+  window.KnowledgeReadingHistory?.record(documentId);
   renderDocumentView(documentId);
   if (updateHash) setHash({ document: documentId });
   ui.contentPanel.scrollTo({ top: 0, behavior: "smooth" });

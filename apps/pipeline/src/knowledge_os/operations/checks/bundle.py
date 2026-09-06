@@ -100,6 +100,8 @@ _SITE_BUNDLE_FILES = {
     "assets/styles.css",
     "assets/markdown-reader.js",
     "assets/markdown-reader.css",
+    "assets/reading-history.js",
+    "assets/reading-actions.js",
     "build-meta.json",
     "data/graph.json",
     "data/search-index.json",

@@ -13,7 +13,10 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence
 from .. import db
 from ..ai import KnowledgeExtraction, RelationSuggestion
 from ..config import ProjectPaths, atomic_write_json, atomic_write_text
-from ..storage.reviews import DEFAULT_REVIEW_STATUS, review_statuses_by_document
+from ..storage.reviews import (
+    DEFAULT_REVIEW_STATUS,
+    review_metadata_by_document,
+)
 from .classification import Classification
 from .extraction import ExtractionError
 
@@ -350,7 +353,7 @@ def build_site_data(
             )
 
     documents: List[Dict[str, Any]] = []
-    review_statuses = review_statuses_by_document(connection)
+    review_metadata = review_metadata_by_document(connection)
     for row in document_rows:
         path = json.loads(row["path_json"])[1:]
         raw_origin = str(row["origin"])
@@ -362,8 +365,11 @@ def build_site_data(
             if raw_origin.startswith(("https://", "http://"))
             else ("manual" if raw_origin == "manual" else "local-file")
         )
-        documents.append(
-            {
+        current_review = review_metadata.get(
+            str(row["id"]),
+            {"status": DEFAULT_REVIEW_STATUS, "note": "", "reviewed_at": "", "history": []},
+        )
+        document_payload = {
                 "id": row["id"],
                 "source_id": row["source_id"],
                 "section_index": row["section_index"],
@@ -402,9 +408,7 @@ def build_site_data(
                 ],
                 "tags": json.loads(row["tags_json"]),
                 "visibility": row["visibility"],
-                "status": review_statuses.get(
-                    str(row["id"]), DEFAULT_REVIEW_STATUS
-                ),
+                "status": current_review["status"],
                 "relations": relations_by_document.get(str(row["id"]), []),
                 "classification": {
                     "confidence": row["confidence"],
@@ -416,7 +420,13 @@ def build_site_data(
                 },
                 "updated_at": row["updated_at"],
             }
-        )
+        if visibility == "private":
+            document_payload["review"] = {
+                "note": current_review.get("note", ""),
+                "reviewed_at": current_review.get("reviewed_at", ""),
+                "history": current_review.get("history", []),
+            }
+        documents.append(document_payload)
     counts_by_node = {
         str(row["node_id"]): int(row["count"])
         for row in connection.execute(

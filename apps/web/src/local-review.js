@@ -67,6 +67,8 @@
       documentId: payload.document_id,
       previousStatus: payload.previous_status,
       targetStatus: payload.target_status,
+      previousNote: typeof payload.previous_note === "string" ? payload.previous_note : "",
+      note: typeof payload.note === "string" ? payload.note : "",
       changed: payload.changed,
       dryRun: payload.dry_run,
       siteRebuilt: payload.site_rebuilt,
@@ -132,7 +134,15 @@
       }
     }
 
-    async change(session, action, documentId, targetStatus, expectedStatus) {
+    async change(
+      session,
+      action,
+      documentId,
+      targetStatus,
+      expectedStatus,
+      note = "",
+      expectedNote = "",
+    ) {
       const payload = await this.jsonRequest(
         REVIEW_PATH,
         {
@@ -147,6 +157,8 @@
             document_id: documentId,
             target_status: targetStatus,
             expected_status: expectedStatus,
+            note,
+            expected_note: expectedNote,
           }),
         },
         action === "preview" ? "无法预览可信状态" : "无法保存可信状态",
@@ -220,6 +232,9 @@
       if (!this.session || !this.document || !documentItem?.id) return null;
       const currentStatus = optionFor(documentItem.status).value;
       const currentOption = optionFor(currentStatus);
+      const currentReview = documentItem.review && typeof documentItem.review === "object"
+        ? documentItem.review : {};
+      const currentNote = typeof currentReview.note === "string" ? currentReview.note : "";
       const create = (tag, attributes, ...children) => createElement(
         this.document, tag, attributes, ...children,
       );
@@ -228,6 +243,9 @@
         { className: `review-current review-${currentStatus}` },
         create("strong", { text: currentOption.label }),
         create("small", { text: currentOption.detail }),
+        currentReview.reviewed_at
+          ? create("small", { text: `最近审核：${currentReview.reviewed_at}` }) : null,
+        currentNote ? create("p", { className: "review-note", text: currentNote }) : null,
       );
       const toggle = create("button", {
         className: "review-toggle",
@@ -239,6 +257,14 @@
         className: "review-select",
         "aria-label": "选择新的可信状态",
       });
+      const note = create("textarea", {
+        className: "review-note-input",
+        rows: "4",
+        maxlength: "1000",
+        "aria-label": "审核说明",
+        placeholder: "可选：记录判断依据、适用范围或需要复查的原因",
+      });
+      note.value = currentNote;
       select.append(create("option", { value: "", text: "请选择可信状态" }));
       for (const option of REVIEW_OPTIONS.filter((item) => item.value !== currentStatus)) {
         select.append(create("option", { value: option.value, text: `${option.label} · ${option.detail}` }));
@@ -258,6 +284,7 @@
         "form",
         { className: "review-form", hidden: true },
         create("label", { text: "调整为" }, select),
+        create("label", { text: "审核说明（可选）" }, note),
         create("small", { text: "可信状态是你的人工判断，不会改写原文或来源证据。" }),
         create("div", { className: "review-actions" }, previewButton, cancel),
       );
@@ -267,6 +294,24 @@
         role: "status",
       });
       const card = create("div", { className: "review-card" }, current, toggle, form, preview);
+      const history = Array.isArray(currentReview.history) ? currentReview.history : [];
+      if (history.length) {
+        const details = create("details", { className: "review-history" });
+        details.append(create("summary", { text: `审核记录 · ${history.length} 次` }));
+        const list = create("ol");
+        for (const item of [...history].reverse()) {
+          const status = optionFor(item.status);
+          list.append(create(
+            "li",
+            {},
+            create("strong", { text: status.label }),
+            create("time", { text: item.reviewed_at || "未记录时间" }),
+            item.note ? create("p", { text: item.note }) : null,
+          ));
+        }
+        details.append(list);
+        card.append(details);
+      }
       let previewedTarget = null;
       let busy = false;
 
@@ -302,6 +347,7 @@
         resetPreview();
         previewButton.disabled = !select.value;
       });
+      note.addEventListener("input", resetPreview);
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
         if (busy || !select.value) return;
@@ -309,7 +355,13 @@
         previewButton.textContent = "正在预览…";
         try {
           const result = await this.client.change(
-            this.session, "preview", documentItem.id, select.value, currentStatus,
+            this.session,
+            "preview",
+            documentItem.id,
+            select.value,
+            currentStatus,
+            note.value,
+            currentNote,
           );
           previewedTarget = result.targetStatus;
           const target = optionFor(result.targetStatus);
@@ -333,7 +385,13 @@
             confirm.textContent = "正在保存并更新网站…";
             try {
               const applied = await this.client.change(
-                this.session, "apply", documentItem.id, select.value, currentStatus,
+                this.session,
+                "apply",
+                documentItem.id,
+                select.value,
+                currentStatus,
+                note.value,
+                currentNote,
               );
               const reloaded = await this.reloadWhenReady(
                 applied,

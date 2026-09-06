@@ -13,6 +13,8 @@ node --check apps/web/src/local-review.js
 node --check apps/web/src/local-review-queue.js
 node --check apps/web/src/app.js
 node --check apps/web/src/markdown-reader.js
+node --check apps/web/src/reading-history.js
+node --check apps/web/src/reading-actions.js
 node tests/web/data-source.test.js
 node tests/web/related-documents.test.js
 node tests/web/local-ingest.test.js
@@ -20,3 +22,5 @@ node tests/web/local-classification.test.js
 node tests/web/local-review.test.js
 node tests/web/local-review-queue.test.js
 node tests/web/markdown-reader.test.js
+node tests/web/reading-history.test.js
+node tests/web/reading-actions.test.js

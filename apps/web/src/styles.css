@@ -679,6 +679,30 @@ kbd {
   font-size: 10px;
 }
 
+.reading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 18px 0 2px;
+}
+
+.reading-action,
+.context-clear {
+  padding: 7px 10px;
+  color: var(--teal);
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.reading-action:hover,
+.context-clear:hover {
+  background: white;
+  border-color: #b9cfc9;
+}
+
 .child-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -955,6 +979,14 @@ kbd {
   font-family: var(--font-serif);
   font-size: 15px;
   font-weight: 600;
+}
+
+.context-section h3 .context-clear {
+  margin-left: auto;
+  color: var(--muted);
+  font-family: var(--font-sans);
+  font-size: 9px;
+  font-weight: 500;
 }
 
 .context-section h3 span {
