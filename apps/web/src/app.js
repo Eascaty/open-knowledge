@@ -760,21 +760,14 @@ function hideSearch() {
   ui.searchTrigger.focus();
 }
 
-function tokenizeQuery(value) {
-  const normalized = value.trim().toLocaleLowerCase("zh-CN");
-  if (!normalized) return [];
-  const spaced = normalized.split(/\s+/).filter(Boolean);
-  return [...new Set([normalized, ...spaced])];
-}
-
-const SEARCH_FILTERS = Object.freeze([
+const SEARCH_FILTERS = window.KnowledgeSearch?.FILTERS || [
   { value: "all", label: "全部" },
   { value: "document", label: "知识卡" },
   { value: "node", label: "专业节点" },
-]);
+];
 
 function searchFilterLabel(value = state.searchFilter) {
-  return SEARCH_FILTERS.find((item) => item.value === value)?.label || "全部";
+  return window.KnowledgeSearch?.filterLabel(value) || "全部";
 }
 
 function renderSearchFilters() {
@@ -800,38 +793,17 @@ function renderSearchFilters() {
   }
 }
 
-function scoreSearchItem(item, tokens) {
-  const title = String(item.title || "").toLocaleLowerCase("zh-CN");
-  const path = pathText(item.path).toLocaleLowerCase("zh-CN");
-  const tags = (item.tags || []).join(" ").toLocaleLowerCase("zh-CN");
-  const summary = String(item.summary || "").toLocaleLowerCase("zh-CN");
-  const body = String(item.search_text || "").toLocaleLowerCase("zh-CN");
-  let score = 0;
-  for (const token of tokens) {
-    if (!body.includes(token)) return 0;
-    if (title === token) score += 30;
-    else if (title.includes(token)) score += 12;
-    if (path.includes(token)) score += 7;
-    if (tags.includes(token)) score += 5;
-    if (summary.includes(token)) score += 3;
-    score += Math.max(1, 4 - body.indexOf(token) / 500);
-  }
-  return score;
-}
-
 function runSearch(value) {
-  const tokens = tokenizeQuery(value);
+  const tokens = window.KnowledgeSearch?.tokenizeQuery(value) || [];
   clear(ui.searchResults);
   if (!tokens.length) {
     ui.searchHint.textContent = `输入关键词开始搜索；当前范围：${searchFilterLabel()}。`;
     return;
   }
-  const results = state.search.items
-    .filter((item) => state.searchFilter === "all" || item.type === state.searchFilter)
-    .map((item) => ({ item, score: scoreSearchItem(item, tokens) }))
-    .filter((result) => result.score > 0)
-    .sort((left, right) => right.score - left.score || left.item.title.localeCompare(right.item.title, "zh-CN"))
-    .slice(0, 30);
+  const results = window.KnowledgeSearch?.search(state.search.items, value, {
+    filter: state.searchFilter,
+    limit: 30,
+  }) || [];
   ui.searchHint.textContent = results.length
     ? `找到 ${results.length} 条${searchFilterLabel()}结果`
     : `当前范围没有找到匹配内容（${searchFilterLabel()}）`;
