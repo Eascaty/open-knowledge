@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+PROJECT_ROOT=$(dirname -- "${SCRIPT_DIR}")
+export PYTHONDONTWRITEBYTECODE=1
+export PYTHONPATH="${PROJECT_ROOT}/apps/pipeline/src"
+exec python3 -B -m knowledge_os.operations --root "${PROJECT_ROOT}" verify-site-package "$@"

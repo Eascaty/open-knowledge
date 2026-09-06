@@ -10,6 +10,7 @@ from knowledge_os.operations.site_package import (
     MANIFEST_NAME,
     SitePackageError,
     package_site,
+    verify_site_package,
 )
 
 
@@ -34,6 +35,28 @@ class SitePackageTests(unittest.TestCase):
             self.assertEqual(manifest["visibility"], "private")
             self.assertEqual(manifest["file_count"], 2)
             self.assertEqual(result.file_count, 2)
+            verified = verify_site_package(result.package, expected_sha256=result.sha256)
+            self.assertEqual(verified.visibility, "private")
+            self.assertEqual(verified.file_count, 2)
+
+    def test_verification_rejects_tampered_member(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "site"
+            output = root / "out"
+            source.mkdir()
+            (source / "index.html").write_text("ok", encoding="utf-8")
+            result = package_site(source, output, visibility="private")
+            tampered = root / "tampered.zip"
+            with zipfile.ZipFile(result.package) as source_archive, zipfile.ZipFile(
+                tampered, "w", compression=zipfile.ZIP_DEFLATED
+            ) as target_archive:
+                for info in source_archive.infolist():
+                    content = source_archive.read(info.filename)
+                    if info.filename == "index.html": content = b"changed"
+                    target_archive.writestr(info, content)
+            with self.assertRaisesRegex(SitePackageError, "digest"):
+                verify_site_package(tampered)
 
     def test_rejects_symlinked_site_file(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -60,6 +83,27 @@ class SitePackageTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(SitePackageError, "visibility"):
                 package_site(root / "site", root / "out", visibility="private")
+
+    def test_built_site_package_is_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "site"
+            output = root / "out"
+            source.mkdir()
+            (source / "index.html").write_text("ok", encoding="utf-8")
+            (source / "build-meta.json").write_text(
+                json.dumps(
+                    {
+                        "visibility": "private",
+                        "generated_at": "2026-01-01T00:00:00+00:00",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            first = package_site(source, output, visibility="private")
+            second = package_site(source, output, visibility="private")
+            self.assertEqual(first.package, second.package)
+            self.assertEqual(first.sha256, second.sha256)
 
 
 if __name__ == "__main__":

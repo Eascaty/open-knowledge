@@ -20,7 +20,7 @@ from .lock import LockUnavailable, ProjectLock
 from .migration import migrate_project_database
 from .restore import RestoreDrillError, run_restore_drill
 from .snapshot import SnapshotError, create_sqlite_snapshot
-from .site_package import SitePackageError, package_site
+from .site_package import SitePackageError, package_site, verify_site_package
 
 
 def _emit(value: Any) -> None:
@@ -155,6 +155,23 @@ def _package_site(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _verify_site_package(arguments: argparse.Namespace) -> int:
+    result = verify_site_package(arguments.package, expected_sha256=arguments.sha256)
+    _emit(
+        {
+            "ok": True,
+            "package": str(result.package),
+            "visibility": result.visibility,
+            "sha256": result.sha256,
+            "file_count": result.file_count,
+            "total_bytes": result.total_bytes,
+            "integrity": result.integrity,
+            "extracted": False,
+        }
+    )
+    return 0
+
+
 def _path_within_workspace(path: Path, workspace: Path) -> bool:
     try:
         path.relative_to(workspace)
@@ -221,6 +238,13 @@ def build_parser() -> argparse.ArgumentParser:
     package.add_argument("--source", type=Path)
     package.add_argument("--output", type=Path)
     package.set_defaults(handler=_package_site)
+
+    verify_package = commands.add_parser(
+        "verify-site-package", help="离线验证站点分享包，不解压、不覆盖任何文件"
+    )
+    verify_package.add_argument("package", type=Path)
+    verify_package.add_argument("--sha256")
+    verify_package.set_defaults(handler=_verify_site_package)
 
     classify = commands.add_parser(
         "manual-classify",

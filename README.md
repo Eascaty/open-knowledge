@@ -212,6 +212,9 @@ cp tests/fixtures/java_g1.md workspace/inbox/files/
 # 把已通过门禁的私密静态站点打成可自行上传的分享包（不联网）
 ./scripts/package-site --visibility private
 
+# 上传前后离线核验分享包，不解压、不覆盖项目文件
+./scripts/verify-site-package /absolute/path/to/site-package.zip --sha256 <digest>
+
 # 运行 Python 测试
 ./scripts/test
 ```

@@ -32,6 +32,13 @@ workspace/exports/private/backups/
 运行配置或上传凭据；命令本身不联网、不上传。把 ZIP 解压到你选择的静态托管目录后，
 仍应由你自行配置访问控制，不能把 `private` 包当成认证方案。
 
+拿到 ZIP 后可用以下命令核对整体和逐文件摘要；命令只读取压缩包，不会解压：
+
+```bash
+./scripts/verify-site-package /absolute/path/to/site-package.zip \
+  --sha256 <package-sha256>
+```
+
 ## 恢复演练
 
 恢复演练只在临时目录创建候选数据库，不覆盖正式数据库：
