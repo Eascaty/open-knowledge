@@ -13,12 +13,14 @@ from .classification import (
     ClassificationCorrectionError,
     correct_document_classification,
 )
+from .checks import check_site_bundle
 from .gate import run_prebuild_gate
 from .health import run_health_checks, write_health_report
 from .lock import LockUnavailable, ProjectLock
 from .migration import migrate_project_database
 from .restore import RestoreDrillError, run_restore_drill
 from .snapshot import SnapshotError, create_sqlite_snapshot
+from .site_package import SitePackageError, package_site
 
 
 def _emit(value: Any) -> None:
@@ -113,6 +115,54 @@ def _restore_drill(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _package_site(arguments: argparse.Namespace) -> int:
+    root = arguments.root.expanduser().resolve()
+    paths = ProjectPaths.from_root(root)
+    source = (
+        arguments.source.expanduser().resolve()
+        if arguments.source
+        else paths.site_dir / "dist"
+    )
+    output = (
+        arguments.output.expanduser().resolve()
+        if arguments.output
+        else paths.private_exports_dir / "site-packages"
+    )
+    if not _path_within_workspace(source, root):
+        raise SitePackageError("site package source must stay inside the project")
+    if not _path_within_workspace(output, paths.workspace_dir):
+        raise SitePackageError("site package output must stay inside workspace")
+    with ProjectLock(root, purpose="package-site"):
+        bundle_check = check_site_bundle(source, expected_visibility=arguments.visibility)
+        if not bundle_check.passed:
+            raise SitePackageError(
+                "site bundle check failed: {}".format(bundle_check.summary)
+            )
+        result = package_site(source, output, visibility=arguments.visibility)
+    _emit(
+        {
+            "ok": True,
+            "source": str(result.source),
+            "package": str(result.package),
+            "visibility": result.visibility,
+            "sha256": result.sha256,
+            "file_count": result.file_count,
+            "size_bytes": result.size_bytes,
+            "created_at": result.created_at,
+            "uploaded": False,
+        }
+    )
+    return 0
+
+
+def _path_within_workspace(path: Path, workspace: Path) -> bool:
+    try:
+        path.relative_to(workspace)
+    except ValueError:
+        return False
+    return True
+
+
 def _manual_classify(arguments: argparse.Namespace) -> int:
     root = arguments.root.expanduser().resolve()
     with ProjectLock(root, purpose="manual-classification"):
@@ -161,6 +211,17 @@ def build_parser() -> argparse.ArgumentParser:
     restore.add_argument("--sha256")
     restore.set_defaults(handler=_restore_drill)
 
+    package = commands.add_parser(
+        "package-site",
+        help="把已构建站点打成带清单和 SHA-256 的本地分享包",
+    )
+    package.add_argument(
+        "--visibility", choices=("private", "public"), default="private"
+    )
+    package.add_argument("--source", type=Path)
+    package.add_argument("--output", type=Path)
+    package.set_defaults(handler=_package_site)
+
     classify = commands.add_parser(
         "manual-classify",
         help="在项目锁内原子纠正一张知识卡的主分类",
@@ -182,6 +243,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         ClassificationCorrectionError,
         RestoreDrillError,
         SnapshotError,
+        SitePackageError,
         OSError,
         RuntimeError,
         ValueError,

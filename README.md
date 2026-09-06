@@ -209,6 +209,9 @@ cp tests/fixtures/java_g1.md workspace/inbox/files/
 # 在临时候选库中验证某个快照，不覆盖正式数据库
 ./scripts/restore-drill /absolute/path/to/snapshot.sqlite3 --sha256 <digest>
 
+# 把已通过门禁的私密静态站点打成可自行上传的分享包（不联网）
+./scripts/package-site --visibility private
+
 # 运行 Python 测试
 ./scripts/test
 ```

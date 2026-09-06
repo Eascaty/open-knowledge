@@ -18,6 +18,20 @@ workspace/exports/private/backups/
 
 不要直接复制正在使用的 `knowledge.sqlite3`、`-wal` 或 `-shm` 文件作为备份。
 
+## 生成可分享站点包
+
+如果只想把已经构建好的知识网站放到自己的云盘或静态托管，运行：
+
+```bash
+./scripts/package-site --visibility private
+```
+
+命令会先检查 `workspace/site/dist` 的构建清单和可见性，再在
+`workspace/exports/private/site-packages/` 生成带 `knowledge-site-package.json`
+清单和 SHA-256 的 ZIP。包里只有站点文件，不包含 SQLite、原始资料、Vault、日志、
+运行配置或上传凭据；命令本身不联网、不上传。把 ZIP 解压到你选择的静态托管目录后，
+仍应由你自行配置访问控制，不能把 `private` 包当成认证方案。
+
 ## 恢复演练
 
 恢复演练只在临时目录创建候选数据库，不覆盖正式数据库：
