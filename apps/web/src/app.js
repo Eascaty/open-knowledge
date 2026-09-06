@@ -12,6 +12,7 @@ const state = {
   activeNodeId: null,
   activeDocumentId: null,
   view: "node",
+  searchFilter: "all",
   graphHitboxes: [],
 };
 
@@ -746,6 +747,7 @@ function showSearch() {
   window.dispatchEvent(new Event("knowledge:close-review-queue"));
   ui.searchDialog.hidden = false;
   document.body.classList.add("search-open");
+  renderSearchFilters();
   window.setTimeout(() => ui.searchInput.focus(), 0);
 }
 
@@ -763,6 +765,39 @@ function tokenizeQuery(value) {
   if (!normalized) return [];
   const spaced = normalized.split(/\s+/).filter(Boolean);
   return [...new Set([normalized, ...spaced])];
+}
+
+const SEARCH_FILTERS = Object.freeze([
+  { value: "all", label: "全部" },
+  { value: "document", label: "知识卡" },
+  { value: "node", label: "专业节点" },
+]);
+
+function searchFilterLabel(value = state.searchFilter) {
+  return SEARCH_FILTERS.find((item) => item.value === value)?.label || "全部";
+}
+
+function renderSearchFilters() {
+  if (!ui.searchFilters) return;
+  clear(ui.searchFilters);
+  for (const filter of SEARCH_FILTERS) {
+    const button = element(
+      "button",
+      {
+        className: "search-filter",
+        type: "button",
+        "aria-pressed": String(state.searchFilter === filter.value),
+        text: filter.label,
+      },
+    );
+    button.addEventListener("click", () => {
+      state.searchFilter = filter.value;
+      renderSearchFilters();
+      runSearch(ui.searchInput.value);
+      ui.searchInput.focus();
+    });
+    ui.searchFilters.append(button);
+  }
 }
 
 function scoreSearchItem(item, tokens) {
@@ -788,15 +823,18 @@ function runSearch(value) {
   const tokens = tokenizeQuery(value);
   clear(ui.searchResults);
   if (!tokens.length) {
-    ui.searchHint.textContent = "输入关键词开始搜索；支持中文连续匹配。";
+    ui.searchHint.textContent = `输入关键词开始搜索；当前范围：${searchFilterLabel()}。`;
     return;
   }
   const results = state.search.items
+    .filter((item) => state.searchFilter === "all" || item.type === state.searchFilter)
     .map((item) => ({ item, score: scoreSearchItem(item, tokens) }))
     .filter((result) => result.score > 0)
     .sort((left, right) => right.score - left.score || left.item.title.localeCompare(right.item.title, "zh-CN"))
     .slice(0, 30);
-  ui.searchHint.textContent = results.length ? `找到 ${results.length} 条最相关结果` : "没有找到匹配内容";
+  ui.searchHint.textContent = results.length
+    ? `找到 ${results.length} 条${searchFilterLabel()}结果`
+    : `当前范围没有找到匹配内容（${searchFilterLabel()}）`;
   for (const result of results) {
     const item = result.item;
     const button = element(
@@ -958,6 +996,27 @@ function renderMapView() {
     element("span", { className: "graph-note", text: "点击节点进入对应知识目录" }),
   );
   view.append(shell);
+  const visibleNodes = visibleGraphNodes();
+  const nodeList = element(
+    "details",
+    { className: "graph-node-list" },
+    element("summary", { text: `列表查看 · ${visibleNodes.length} 个节点` }),
+  );
+  const nodeListItems = element("ul", { className: "graph-node-list-items" });
+  for (const graphNode of visibleNodes) {
+    const nodeItem = state.nodes.get(graphNode.id);
+    if (!nodeItem) continue;
+    const button = element(
+      "button",
+      { type: "button", className: "graph-node-link" },
+      element("strong", { text: nodeItem.name }),
+      element("small", { text: pathText(nodeItem.path) }),
+    );
+    button.addEventListener("click", () => navigateToNode(nodeItem.id));
+    nodeListItems.append(element("li", {}, button));
+  }
+  nodeList.append(nodeListItems);
+  view.append(nodeList);
   ui.contentView.append(view);
   const canvas = shell.querySelector("canvas");
   canvas.addEventListener("click", (event) => {
@@ -1013,6 +1072,7 @@ function bindUi() {
   ui.searchDialog = document.getElementById("search-dialog");
   ui.searchInput = document.getElementById("search-input");
   ui.searchHint = document.getElementById("search-hint");
+  ui.searchFilters = document.getElementById("search-filters");
   ui.searchResults = document.getElementById("search-results");
   ui.mobileTabs = [...document.querySelectorAll(".mobile-tabs button")];
   ui.toast = document.getElementById("toast");
@@ -1031,6 +1091,7 @@ function bindUi() {
     closer.addEventListener("click", hideSearch);
   }
   ui.searchInput.addEventListener("input", (event) => runSearch(event.target.value));
+  renderSearchFilters();
   for (const button of ui.mobileTabs) {
     button.addEventListener("click", () => setMobilePanel(button.dataset.panel));
   }
