@@ -169,6 +169,14 @@ PUBLISHED
 - 浏览器只在 `sessionStorage` 保存不含令牌的投放回执；刷新不会丢失进度，知识管家重启会把未完成的 `processing` 恢复为 `queued`。
 - 网页会话令牌只存在于管理器内存，重启即轮换；它不复用停止服务的控制令牌，也不写日志、状态文件或网站产物。
 
+### 4.1.2 ChatGPT/Gemini 导出导入
+
+- 账号导出采用“用户下载、程序本地读取”的边界，不连接 ChatGPT/Gemini 账号，不保存 Cookie、令牌或会话凭据，也不调用外部 API。
+- `scripts/import-chat-export` 支持 ChatGPT 常见 `conversations.json`、Gemini Takeout 的会话 JSON/活动 JSON，以及 HTML、ZIP 和已解压目录；不识别的结构明确失败，不把原始 JSON 直接当作知识正文。
+- 导入器按会话生成稳定 Markdown 文件，文件名由 provider、标题和正文 SHA-256 派生；重复导出不会覆盖既有文件，也不会绕过收件箱的原子入库和去重。
+- 导出的会话随后复用原有 Markdown 解析、长文拆卡、逐级分类、可信审核、Vault、FTS 和网站发布链路；默认仍是 private，输出目录强制位于 `workspace/`。
+- ZIP 与 JSON 解析有文件数量、单文件、解压总量、压缩比、路径穿越、符号链接和消息数量上限；HTML 只提取文本，不加载远程资源。
+
 ### 4.2 接收
 
 第一阶段只支持明确输入：
@@ -623,11 +631,11 @@ raw_auto_delete: false
 - 健康检查
 - 回滚
 
-### 阶段 E：扩展输入（暂缓）
+### 阶段 E：扩展输入（部分完成）
 
+- ChatGPT/Gemini 官方导出本地导入（已完成）
 - OCR
 - 音视频
-- ChatGPT/Gemini
 - 浏览器采集
 - RSS 与合规网页采集
 

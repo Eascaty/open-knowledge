@@ -136,6 +136,7 @@ cp tests/fixtures/java_g1.md workspace/inbox/files/
 - `.html`、`.htm`
 - `.docx`
 - `.pdf`：需要系统可用的 `pdftotext`，未安装时会给出明确提示
+- ChatGPT/Gemini 官方导出的 JSON、HTML 或 ZIP：通过本地导入脚本解析，不连接账号
 
 较长的 Markdown 会按二级标题拆成多张知识卡，每张卡独立提炼、分类和检索；原始文件保持不变。系统会在卡片中记录标题路径、原文行号、正文哈希和拆分器版本，便于网页、API 与未来 App 回到同一来源。
 
@@ -190,6 +191,12 @@ cp tests/fixtures/java_g1.md workspace/inbox/files/
 # 直接导入一段文本
 ./scripts/kb ingest --text "今天学习了 G1 Mixed GC" --title "G1 学习记录"
 
+# 预览 ChatGPT/Gemini 导出，不写入项目
+./scripts/import-chat-export ~/Downloads/conversations.json --provider auto --dry-run
+
+# 导入导出文件；结果写入私密 workspace，知识管家会继续处理
+./scripts/import-chat-export ~/Downloads/conversations.json --provider chatgpt
+
 # 执行数据库、隐私、密钥和断链检查
 ./scripts/doctor
 
@@ -206,7 +213,7 @@ cp tests/fixtures/java_g1.md workspace/inbox/files/
 ./scripts/test
 ```
 
-重复投入同一个文件不会生成重复资料：系统使用 SHA-256 去重，处理任务也可以安全重试。
+重复投入同一个文件不会生成重复资料：系统使用 SHA-256 去重，处理任务也可以安全重试。聊天导入会按会话内容生成稳定文件名，同一份导出重复执行也不会覆盖或重复入库。
 
 ## 从 SQLite schema v1 升级
 

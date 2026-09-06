@@ -18,6 +18,11 @@ from .config import (
     load_taxonomy,
 )
 from .ingest import IngestError, discover_files, ingest_file, ingest_text
+from .importers.chat_exports import (
+    ChatExportError,
+    materialize_conversations,
+    parse_export,
+)
 from .knowledge import build_site_data, process_jobs
 from .operations.lock import LockUnavailable, ProjectLock
 
@@ -112,6 +117,57 @@ def _command_ingest(arguments: argparse.Namespace) -> int:
             ],
         }
         _emit(payload)
+        return 0
+    finally:
+        connection.close()
+
+
+def _command_import_chat_export(arguments: argparse.Namespace) -> int:
+    paths, connection, _taxonomy, runtime = _open_project(arguments.root)
+    try:
+        conversations = parse_export(Path(arguments.input), arguments.provider)
+        output = (
+            paths.inbox_dir / "files" / "chat-exports"
+            if not arguments.output
+            else Path(arguments.output).expanduser().resolve()
+        )
+        workspace = paths.workspace_dir.resolve()
+        if output != workspace and workspace not in output.parents:
+            raise ChatExportError("导出结果目录必须位于项目 workspace 内")
+        materialized = materialize_conversations(
+            conversations, output, dry_run=arguments.dry_run
+        )
+        ingested = []
+        if not arguments.dry_run:
+            for item in materialized:
+                result = ingest_file(connection, paths, item.path, runtime)
+                ingested.append(
+                    {
+                        "source_id": result.source_id,
+                        "sha256": result.sha256,
+                        "duplicate": result.duplicate,
+                    }
+                )
+        _emit(
+            {
+                "ok": True,
+                "provider": arguments.provider,
+                "conversations": len(conversations),
+                "files": [
+                    {
+                        "path": str(item.path),
+                        "provider": item.provider,
+                        "conversation_id": item.conversation_id,
+                        "sha256": item.sha256,
+                        "duplicate": item.duplicate,
+                    }
+                    for item in materialized
+                ],
+                "ingested": ingested,
+                "dry_run": bool(arguments.dry_run),
+                "next": "知识管家会继续处理 workspace/inbox/files/chat-exports 中的 Markdown。",
+            }
+        )
         return 0
     finally:
         connection.close()
@@ -267,6 +323,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ingest_parser.set_defaults(handler=_command_ingest)
 
+    export_parser = commands.add_parser(
+        "import-chat-export", help="离线导入 ChatGPT/Gemini 导出文件"
+    )
+    export_parser.add_argument("input", help="JSON、HTML、ZIP 或已解压的导出目录")
+    export_parser.add_argument(
+        "--provider", choices=("auto", "chatgpt", "gemini"), default="auto"
+    )
+    export_parser.add_argument(
+        "--output", help="输出目录，必须位于 workspace 内；默认写入 chat-exports"
+    )
+    export_parser.add_argument("--dry-run", action="store_true", help="只解析，不写入项目")
+    export_parser.set_defaults(handler=_command_import_chat_export)
+
     run_parser = commands.add_parser("run", help="处理任务直到队列为空或达到上限")
     run_parser.add_argument("--max-jobs", type=int, default=100)
     run_parser.add_argument(
@@ -309,6 +378,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return int(arguments.handler(arguments))
     except (
         ConfigError,
+        ChatExportError,
         IngestError,
         LockUnavailable,
         ValueError,
