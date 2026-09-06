@@ -203,6 +203,12 @@ cp tests/fixtures/java_g1.md workspace/inbox/files/
 # 创建 SQLite 一致性备份
 ./scripts/backup
 
+# 创建包含数据库、原始资料、Vault 和站点数据的完整私密备份包（不联网）
+./scripts/backup-bundle
+
+# 离线核验完整备份包，不覆盖正式数据库
+./scripts/verify-backup-bundle /absolute/path/to/knowledge-backup.zip --sha256 <digest>
+
 # 用固定虚构资料执行批量、幂等、失败隔离验收
 ./scripts/acceptance
 
@@ -214,6 +220,9 @@ cp tests/fixtures/java_g1.md workspace/inbox/files/
 
 # 上传前后离线核验分享包，不解压、不覆盖项目文件
 ./scripts/verify-site-package /absolute/path/to/site-package.zip --sha256 <digest>
+
+# 检查 Cloudflare Pages 发布计划；只跑本地门禁，不联网、不上传
+./scripts/publish-plan --project-name your-pages-project --visibility private
 
 # 运行 Python 测试
 ./scripts/test

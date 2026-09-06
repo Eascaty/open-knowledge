@@ -26,6 +26,7 @@
 实现状态：本地入库、长文拆卡、分类、搜索、知识图、静态站、检查、备份恢复演练和发布适配代码已完成；项目内本地知识管家提供网页文件投放、粘贴笔记、逐条进度、收件箱监听、全流水线自动运行和持续网站服务；SQLite 写模型为 schema v2，Java 21 只读 API 兼容 v1/v2。
 虚构公开资料已经通过 GitHub Pages 提供在线 Demo；真实私密知识的线上地址仍需用户以后登录 Cloudflare 并启用 Access。本地默认零网络请求。
 本地站点分享包只读取已通过门禁的构建产物，以 ZIP 附带文件清单和 SHA-256；它不上传、不包含 SQLite 或原始资料，也不替代托管平台的访问控制。
+完整项目备份是另一条私密运维链路：将数据库一致性快照与收件箱、原始/标准化/隔离资料、Vault、站点产物和配置放入带清单的 ZIP；日志、控制令牌、WAL/SHM 明确排除，验包只在临时候选库中检查 SQLite。
 
 ## 2. 当前范围
 
@@ -595,6 +596,7 @@ raw_auto_delete: false
 - 单条失败不影响其他任务。
 - 每日生成健康报告。
 - 数据库创建一致性快照。
+- `scripts/backup-bundle` 在本地生成包含数据库快照、原始资料、Vault、站点和配置的私密归档；清单逐文件记录 SHA-256，核验只在临时目录执行。
 - v1→v2 只允许通过 `scripts/migrate` 显式迁移，迁移前自动快照并在提交前检查完整性与外键。
 - `scripts/restore-drill` 只把快照恢复到临时候选库并核对哈希、schema、关键表与行数，绝不覆盖正式数据库。
 - `scripts/acceptance` 只使用固定虚构资料验证嵌套输入、重复、长文拆卡、队列续跑、失败隔离、Gate/Health 与零网络。
@@ -635,6 +637,7 @@ raw_auto_delete: false
 - GitHub Actions 隔离构建与门禁
 - Cloudflare Pages
 - Cloudflare Access
+- `scripts/publish-plan` 只生成并检查本地发布计划，不执行网络上传；真实私密发布必须另行确认 Access、账号范围和域名。
 - 自动构建
 - 健康检查
 - 回滚

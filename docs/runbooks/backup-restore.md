@@ -18,6 +18,23 @@ workspace/exports/private/backups/
 
 不要直接复制正在使用的 `knowledge.sqlite3`、`-wal` 或 `-shm` 文件作为备份。
 
+如果需要同时保存数据库之外的原始资料、Vault 和已构建站点，可创建完整项目备份包：
+
+```bash
+./scripts/backup-bundle
+```
+
+默认输出到 `workspace/exports/private/project-backups/`。备份包包含 SQLite 一致性快照、
+配置、inbox、raw、normalized、quarantine、Vault、站点数据和站点构建，并写入逐文件
+SHA-256 清单；不包含上传凭据，也不会联网。拿到备份包后先离线核验：
+
+```bash
+./scripts/verify-backup-bundle /absolute/path/to/knowledge-backup.zip \
+  --sha256 <备份时记录的64位SHA-256>
+```
+
+核验只读取压缩包并在临时目录检查 SQLite 完整性，不会解压覆盖项目文件，也不会修改正式数据库。
+
 ## 生成可分享站点包
 
 如果只想把已经构建好的知识网站放到自己的云盘或静态托管，运行：
@@ -31,6 +48,18 @@ workspace/exports/private/backups/
 清单和 SHA-256 的 ZIP。包里只有站点文件，不包含 SQLite、原始资料、Vault、日志、
 运行配置或上传凭据；命令本身不联网、不上传。把 ZIP 解压到你选择的静态托管目录后，
 仍应由你自行配置访问控制，不能把 `private` 包当成认证方案。
+
+如果准备使用 Cloudflare Pages，可以先检查发布计划：
+
+```bash
+./scripts/publish-plan \
+  --project-name your-pages-project \
+  --visibility private
+```
+
+该命令只执行本地数据库、站点、隐私和断链门禁，输出待执行的 `wrangler` 命令，
+不会登录 Cloudflare、联网或上传文件。只有确认 Cloudflare Access 已启用后，才允许
+在独立的发布流程中执行真实上传。
 
 拿到 ZIP 后可用以下命令核对整体和逐文件摘要；命令只读取压缩包，不会解压：
 
