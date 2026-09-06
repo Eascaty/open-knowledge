@@ -3,6 +3,13 @@
 (function exposeReadingHistory(global) {
   const STORAGE_KEY = "knowledge-os:recent-documents:v1";
   const DEFAULT_LIMIT = 8;
+  const MAX_LIMIT = 8;
+
+  function boundedLimit(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return DEFAULT_LIMIT;
+    return Math.min(MAX_LIMIT, Math.max(1, Math.floor(numeric)));
+  }
 
   function storageFrom(explicit) {
     if (explicit !== undefined) return explicit;
@@ -15,6 +22,7 @@
 
   function read({ storage, limit = DEFAULT_LIMIT } = {}) {
     const source = storageFrom(storage);
+    const bounded = boundedLimit(limit);
     if (!source) return [];
     let parsed;
     try { parsed = JSON.parse(source.getItem(STORAGE_KEY) || "[]"); } catch { return []; }
@@ -29,7 +37,7 @@
     }
     return [...unique.values()]
       .sort((left, right) => right.viewedAt - left.viewedAt || left.id.localeCompare(right.id))
-      .slice(0, Math.max(1, Number(limit) || DEFAULT_LIMIT));
+      .slice(0, bounded);
   }
 
   function record(id, { storage, now = Date.now(), limit = DEFAULT_LIMIT } = {}) {
@@ -39,10 +47,11 @@
     const viewedAt = Number(now);
     if (!Number.isFinite(viewedAt) || viewedAt < 0) return false;
     try {
-      const next = read({ storage: source, limit: Math.max(DEFAULT_LIMIT, Number(limit) || DEFAULT_LIMIT) })
+      const bounded = boundedLimit(limit);
+      const next = read({ storage: source, limit: bounded })
         .filter((item) => item.id !== id);
       next.unshift({ id, viewedAt });
-      source.setItem(STORAGE_KEY, JSON.stringify(next.slice(0, Math.max(1, Number(limit) || DEFAULT_LIMIT))));
+      source.setItem(STORAGE_KEY, JSON.stringify(next.slice(0, bounded)));
       return true;
     } catch { return false; }
   }
@@ -64,6 +73,7 @@
 
   global.KnowledgeReadingHistory = Object.freeze({
     key: STORAGE_KEY,
+    maxLimit: MAX_LIMIT,
     read,
     record,
     clear,

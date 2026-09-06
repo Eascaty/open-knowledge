@@ -38,6 +38,15 @@ function testMalformedStorageAndDocumentLookupAreSafe() {
   assert.equal(api.read({ storage }).length, 0);
 }
 
+function testLimitCannotExceedPrivateHistoryBound() {
+  const storage = new Storage();
+  for (let index = 0; index < 10; index += 1) {
+    assert.equal(api.record(`doc-${index}`, { storage, now: index, limit: 100 }), true);
+  }
+  assert.equal(api.maxLimit, 8);
+  assert.equal(api.read({ storage, limit: 100 }).length, 8);
+}
+
 function testClearAndStorageFailureDoNotBreakBrowsing() {
   const storage = new Storage();
   api.record("java", { storage, now: 1 });
@@ -49,5 +58,6 @@ function testClearAndStorageFailureDoNotBreakBrowsing() {
 }
 
 [testRecordsNewestFirstAndCapsEntries, testMalformedStorageAndDocumentLookupAreSafe,
-  testClearAndStorageFailureDoNotBreakBrowsing].forEach((test) => test());
-process.stdout.write("Web reading history: 3/3 passed\n");
+  testLimitCannotExceedPrivateHistoryBound, testClearAndStorageFailureDoNotBreakBrowsing]
+  .forEach((test) => test());
+process.stdout.write("Web reading history: 4/4 passed\n");
