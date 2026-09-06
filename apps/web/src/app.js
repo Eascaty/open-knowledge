@@ -440,12 +440,7 @@ function renderDocumentView(documentId) {
   }
   if (documentItem.content) {
     view.append(
-      element(
-        "section",
-        { className: "section-block" },
-        element("div", { className: "section-title" }, element("h2", { text: "知识正文" })),
-        element("div", { className: "knowledge-body", text: documentItem.content }),
-      ),
+      window.KnowledgeMarkdownReader.reader(documentItem, { notify: showToast }),
     );
   }
   ui.contentView.append(view);

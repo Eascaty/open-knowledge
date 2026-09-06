@@ -98,6 +98,8 @@ _SITE_BUNDLE_FILES = {
     "assets/local-review-queue.css",
     "assets/local-review-queue.js",
     "assets/styles.css",
+    "assets/markdown-reader.js",
+    "assets/markdown-reader.css",
     "build-meta.json",
     "data/graph.json",
     "data/search-index.json",

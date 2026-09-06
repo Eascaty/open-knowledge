@@ -59,6 +59,8 @@ def _validate_build(directory: Path) -> None:
         "assets/related-documents.js",
         "assets/app.js",
         "assets/styles.css",
+        "assets/markdown-reader.js",
+        "assets/markdown-reader.css",
         "assets/local-ingest.js",
         "assets/local-ingest.css",
         "assets/local-classification.js",
@@ -162,6 +164,8 @@ def build_site(
         )
         shutil.copyfile(ASSET_DIR / "app.js", temp / "assets" / "app.js")
         shutil.copyfile(ASSET_DIR / "styles.css", temp / "assets" / "styles.css")
+        for name in ("markdown-reader.js", "markdown-reader.css"):
+            shutil.copyfile(ASSET_DIR / name, temp / "assets" / name)
         shutil.copyfile(
             ASSET_DIR / "local-ingest.js", temp / "assets" / "local-ingest.js"
         )
