@@ -266,8 +266,11 @@
       });
       note.value = currentNote;
       select.append(create("option", { value: "", text: "请选择可信状态" }));
-      for (const option of REVIEW_OPTIONS.filter((item) => item.value !== currentStatus)) {
-        select.append(create("option", { value: option.value, text: `${option.label} · ${option.detail}` }));
+      for (const option of REVIEW_OPTIONS) {
+        const label = option.value === currentStatus
+          ? `${option.label} · 仅更新说明`
+          : `${option.label} · ${option.detail}`;
+        select.append(create("option", { value: option.value, text: label }));
       }
       const previewButton = create("button", {
         className: "review-preview",

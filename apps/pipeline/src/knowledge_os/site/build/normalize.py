@@ -14,6 +14,7 @@ from urllib.parse import urlsplit, urlunsplit
 from .model import SCHEMA_VERSION, VALID_VISIBILITIES, SiteDataError
 from .review_normalize import normalize_review
 
+
 def _as_text(value: Any, default: str = "") -> str:
     if value is None:
         return default

@@ -370,56 +370,56 @@ def build_site_data(
             {"status": DEFAULT_REVIEW_STATUS, "note": "", "reviewed_at": "", "history": []},
         )
         document_payload = {
-                "id": row["id"],
-                "source_id": row["source_id"],
-                "section_index": row["section_index"],
-                "heading_path": json.loads(row["heading_path_json"]),
-                "source_line_start": row["source_line_start"],
-                "source_line_end": row["source_line_end"],
-                "body_sha256": row["body_sha256"],
-                "splitter_version": row["splitter_version"],
-                "title": row["title"],
-                "summary": row["summary"],
-                "content": row["body"],
-                "key_points": json.loads(row["key_points_json"]),
-                "path": path,
-                "node_id": row["node_id"],
-                "source": {
-                    "kind": row["kind"],
-                    "original_name": row["original_name"],
-                    "origin": source_origin,
-                    "sha256": row["sha256"],
-                },
-                "evidence": [
-                    {
-                        "id": f"{row['id']}-source",
-                        "excerpt": re.sub(r"\s+", " ", str(row["body"])).strip()[:500],
-                        "locator": (
-                            "{}:L{}-L{}".format(
-                                row["original_name"],
-                                row["source_line_start"],
-                                row["source_line_end"],
-                            )
-                            if row["source_line_start"] is not None
-                            else row["original_name"]
-                        ),
-                        "source_label": row["original_name"],
-                    }
-                ],
-                "tags": json.loads(row["tags_json"]),
-                "visibility": row["visibility"],
-                "status": current_review["status"],
-                "relations": relations_by_document.get(str(row["id"]), []),
-                "classification": {
-                    "confidence": row["confidence"],
-                    "method": row["method"],
-                },
-                "model": {
-                    "name": row["model_name"],
-                    "prompt_version": row["prompt_version"],
-                },
-                "updated_at": row["updated_at"],
-            }
+            "id": row["id"],
+            "source_id": row["source_id"],
+            "section_index": row["section_index"],
+            "heading_path": json.loads(row["heading_path_json"]),
+            "source_line_start": row["source_line_start"],
+            "source_line_end": row["source_line_end"],
+            "body_sha256": row["body_sha256"],
+            "splitter_version": row["splitter_version"],
+            "title": row["title"],
+            "summary": row["summary"],
+            "content": row["body"],
+            "key_points": json.loads(row["key_points_json"]),
+            "path": path,
+            "node_id": row["node_id"],
+            "source": {
+                "kind": row["kind"],
+                "original_name": row["original_name"],
+                "origin": source_origin,
+                "sha256": row["sha256"],
+            },
+            "evidence": [
+                {
+                    "id": f"{row['id']}-source",
+                    "excerpt": re.sub(r"\s+", " ", str(row["body"])).strip()[:500],
+                    "locator": (
+                        "{}:L{}-L{}".format(
+                            row["original_name"],
+                            row["source_line_start"],
+                            row["source_line_end"],
+                        )
+                        if row["source_line_start"] is not None
+                        else row["original_name"]
+                    ),
+                    "source_label": row["original_name"],
+                }
+            ],
+            "tags": json.loads(row["tags_json"]),
+            "visibility": row["visibility"],
+            "status": current_review["status"],
+            "relations": relations_by_document.get(str(row["id"]), []),
+            "classification": {
+                "confidence": row["confidence"],
+                "method": row["method"],
+            },
+            "model": {
+                "name": row["model_name"],
+                "prompt_version": row["prompt_version"],
+            },
+            "updated_at": row["updated_at"],
+        }
         if visibility == "private":
             document_payload["review"] = {
                 "note": current_review.get("note", ""),
