@@ -336,6 +336,8 @@ AI 输出默认不是事实。状态包括：
 
 第一版不要求安装任何依赖，也不采用 Docker、n8n、LangChain、Chroma 或 Neo4j。这样即使没有 Ollama、Node 或 Pandoc，仍可完成确定性的全链路；本地模型只是可选增强。
 
+Ollama 响应限制为本地小型 JSON 结果，并校验摘要、列表、候选路径和关系置信度；请求失败、响应过大或结构不合规时，单条资料自动回退到规则引擎，且以 `rules-fallback-v1` 标记本次提炼来源。
+
 ### 5.2 本地知识管家边界
 
 `apps/pipeline/src/knowledge_os/local_manager.py` 负责收件箱监听、逐文件处理关联、脱敏状态和安全停止；`local_http.py` 提供回环地址上的静态站点及网页投放控制面；`local_inbox.py` 负责大小、文件名、类型、并发、私密暂存和原子发布；`local_manager_cli.py` 负责用户命令和后台进程生命周期。它们只编排现有 `run_full_pipeline`，不复制入库、分类或建站逻辑。

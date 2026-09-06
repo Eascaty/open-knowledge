@@ -7,6 +7,7 @@ model or network.  Ollama is an explicit local-only option in runtime.json.
 from __future__ import annotations
 
 import json
+import math
 import re
 import urllib.error
 import urllib.parse
@@ -16,6 +17,10 @@ from typing import Any, Dict, List, Mapping, Optional, Protocol, Sequence
 
 
 PROMPT_VERSION = "knowledge-extract-v1"
+MAX_OLLAMA_RESPONSE_BYTES = 2 * 1024 * 1024
+MAX_SUMMARY_CHARS = 600
+MAX_KEY_POINT_CHARS = 280
+MAX_TAG_CHARS = 64
 
 
 class AIAdapterError(RuntimeError):
@@ -225,50 +230,95 @@ class OllamaAdapter:
             with urllib.request.urlopen(
                 request, timeout=self.timeout_seconds
             ) as response:
-                wrapper = json.loads(response.read().decode("utf-8"))
+                response_bytes = response.read(MAX_OLLAMA_RESPONSE_BYTES + 1)
+                if len(response_bytes) > MAX_OLLAMA_RESPONSE_BYTES:
+                    raise AIAdapterError("local Ollama response exceeds safe limit")
+                wrapper = json.loads(response_bytes.decode("utf-8"))
         except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
             raise AIAdapterError(f"local Ollama request failed: {exc}") from exc
         try:
+            if not isinstance(wrapper, Mapping) or not isinstance(wrapper.get("message"), Mapping):
+                raise TypeError("response.message must be an object")
             raw = wrapper["message"]["content"]
             value = json.loads(raw) if isinstance(raw, str) else raw
             if not isinstance(value, dict):
                 raise TypeError("model response must be an object")
+            summary = value.get("summary", "")
+            key_points = value.get("key_points", [])
+            tags = value.get("tags", [])
+            suggested_path_ids = value.get("suggested_path_ids", [])
+            raw_relations = value.get("relations", [])
+            if not isinstance(summary, str):
+                raise TypeError("summary must be a string")
+            if not isinstance(key_points, list) or not all(isinstance(item, str) for item in key_points):
+                raise TypeError("key_points must be a string list")
+            if not isinstance(tags, list) or not all(isinstance(item, str) for item in tags):
+                raise TypeError("tags must be a string list")
+            if not isinstance(suggested_path_ids, list) or not all(
+                isinstance(item, str) for item in suggested_path_ids
+            ):
+                raise TypeError("suggested_path_ids must be a string list")
+            if not isinstance(raw_relations, list):
+                raise TypeError("relations must be a list")
             relations = []
-            for relation in value.get("relations", []):
-                if isinstance(relation, dict):
-                    relations.append(
-                        RelationSuggestion(
-                            from_node_id=str(relation.get("from_node_id", "")),
-                            to_node_id=str(relation.get("to_node_id", "")),
-                            relation_type=str(
-                                relation.get("relation_type", "related")
-                            ),
-                            label=str(relation.get("label", "相关")),
-                            confidence=float(relation.get("confidence", 0.5)),
-                        )
+            for relation in raw_relations[:20]:
+                if not isinstance(relation, Mapping):
+                    raise TypeError("relation must be an object")
+                from_node_id = relation.get("from_node_id", "")
+                to_node_id = relation.get("to_node_id", "")
+                confidence = relation.get("confidence", 0.5)
+                if not isinstance(from_node_id, str) or not isinstance(to_node_id, str):
+                    raise TypeError("relation node IDs must be strings")
+                if not isinstance(confidence, (int, float)) or isinstance(confidence, bool):
+                    raise TypeError("relation confidence must be numeric")
+                confidence = float(confidence)
+                if not math.isfinite(confidence) or not 0 <= confidence <= 1:
+                    raise ValueError("relation confidence must be between 0 and 1")
+                relations.append(
+                    RelationSuggestion(
+                        from_node_id=from_node_id[:200],
+                        to_node_id=to_node_id[:200],
+                        relation_type=str(relation.get("relation_type", "related"))[:64],
+                        label=str(relation.get("label", "相关"))[:120],
+                        confidence=confidence,
                     )
+                )
             return KnowledgeExtraction(
-                summary=str(value.get("summary", "")).strip(),
-                key_points=[
-                    str(point).strip()
-                    for point in value.get("key_points", [])
-                    if str(point).strip()
-                ][:12],
-                tags=[
-                    str(tag).strip()
-                    for tag in value.get("tags", [])
-                    if str(tag).strip()
-                ][:20],
-                suggested_path_ids=[
-                    str(node_id)
-                    for node_id in value.get("suggested_path_ids", [])
-                    if str(node_id)
-                ],
+                summary=summary.strip()[:MAX_SUMMARY_CHARS],
+                key_points=[point.strip()[:MAX_KEY_POINT_CHARS] for point in key_points if point.strip()][:12],
+                tags=[tag.strip()[:MAX_TAG_CHARS] for tag in tags if tag.strip()][:20],
+                suggested_path_ids=[node_id.strip()[:200] for node_id in suggested_path_ids if node_id.strip()],
                 relations=relations[:20],
                 model_name=f"ollama:{self.model}",
             )
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise AIAdapterError(f"invalid Ollama JSON response: {exc}") from exc
+
+
+class FallbackAdapter:
+    """Use a local model when available and deterministic rules otherwise."""
+
+    def __init__(self, primary: Adapter, fallback: Optional[Adapter] = None) -> None:
+        self.primary = primary
+        self.fallback = fallback or RuleBasedAdapter()
+
+    def extract(
+        self,
+        *,
+        title: str,
+        body: str,
+        taxonomy: Mapping[str, Any],
+    ) -> KnowledgeExtraction:
+        try:
+            return self.primary.extract(title=title, body=body, taxonomy=taxonomy)
+        except AIAdapterError:
+            extraction = self.fallback.extract(
+                title=title,
+                body=body,
+                taxonomy=taxonomy,
+            )
+            extraction.model_name = "rules-fallback-v1"
+            return extraction
 
 
 def adapter_from_runtime(runtime: Mapping[str, Any]) -> Adapter:
@@ -278,9 +328,11 @@ def adapter_from_runtime(runtime: Mapping[str, Any]) -> Adapter:
         return RuleBasedAdapter()
     if provider == "ollama":
         ollama = model.get("ollama", {})
-        return OllamaAdapter(
-            base_url=str(ollama.get("base_url", "http://127.0.0.1:11434")),
-            model=str(ollama.get("model", "qwen3:8b")),
-            timeout_seconds=int(ollama.get("timeout_seconds", 120)),
+        return FallbackAdapter(
+            OllamaAdapter(
+                base_url=str(ollama.get("base_url", "http://127.0.0.1:11434")),
+                model=str(ollama.get("model", "qwen3:8b")),
+                timeout_seconds=int(ollama.get("timeout_seconds", 120)),
+            )
         )
     raise AIAdapterError(f"unsupported model provider: {provider}")
