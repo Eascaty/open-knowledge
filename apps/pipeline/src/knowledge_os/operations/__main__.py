@@ -20,6 +20,7 @@ from .health import run_health_checks, write_health_report
 from .lock import LockUnavailable, ProjectLock
 from .migration import migrate_project_database
 from .restore import RestoreDrillError, run_restore_drill
+from .project_restore import restore_project_backup
 from .snapshot import SnapshotError, create_sqlite_snapshot
 from .project_backup import (
     ProjectBackupError,
@@ -251,6 +252,17 @@ def _verify_backup_bundle(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _restore_backup_bundle(arguments: argparse.Namespace) -> int:
+    result = restore_project_backup(arguments.package, arguments.destination, expected_sha256=arguments.sha256)
+    _emit({
+        "ok": True, "destination": str(result.destination), "sha256": result.sha256,
+        "sources": result.sources, "documents": result.documents,
+        "schema_version": result.schema_version, "site_rebuilt": True,
+        "live_database_modified": False, "uploaded": False,
+    })
+    return 0
+
+
 def _path_within_workspace(path: Path, workspace: Path) -> bool:
     try:
         path.relative_to(workspace)
@@ -349,6 +361,14 @@ def build_parser() -> argparse.ArgumentParser:
     verify_backup.add_argument("package", type=Path)
     verify_backup.add_argument("--sha256")
     verify_backup.set_defaults(handler=_verify_backup_bundle)
+
+    restore_bundle = commands.add_parser(
+        "restore-backup-bundle", help="将完整备份恢复到尚不存在的新目录，离线重建私密网站"
+    )
+    restore_bundle.add_argument("package", type=Path)
+    restore_bundle.add_argument("destination", type=Path)
+    restore_bundle.add_argument("--sha256")
+    restore_bundle.set_defaults(handler=_restore_backup_bundle)
 
     classify = commands.add_parser(
         "manual-classify",

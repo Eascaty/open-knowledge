@@ -205,6 +205,7 @@ cp tests/fixtures/java_g1.md workspace/inbox/files/
 # 创建 SQLite 一致性备份
 ./scripts/backup
 
+# 完整恢复说明见 docs/runbooks/backup-restore.md；恢复目标必须是全新目录
 # 创建包含数据库、原始资料、Vault 和站点数据的完整私密备份包（不联网）
 ./scripts/backup-bundle
 
