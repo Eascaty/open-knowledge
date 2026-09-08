@@ -12,6 +12,7 @@ const state = {
   activeNodeId: null,
   activeDocumentId: null,
   view: "node",
+  searchFilter: "all",
   graphHitboxes: [],
 };
 
@@ -424,6 +425,9 @@ function renderDocumentView(documentId) {
       ),
     );
   }
+  if (window.KnowledgeReadingActions) {
+    view.append(window.KnowledgeReadingActions.render(documentItem, { notify: showToast }));
+  }
   if (documentItem.key_points.length) {
     view.append(
       element(
@@ -440,12 +444,7 @@ function renderDocumentView(documentId) {
   }
   if (documentItem.content) {
     view.append(
-      element(
-        "section",
-        { className: "section-block" },
-        element("div", { className: "section-title" }, element("h2", { text: "知识正文" })),
-        element("div", { className: "knowledge-body", text: documentItem.content }),
-      ),
+      window.KnowledgeMarkdownReader.reader(documentItem, { notify: showToast }),
     );
   }
   ui.contentView.append(view);
@@ -455,11 +454,18 @@ function renderDocumentView(documentId) {
   renderTree();
 }
 
-function contextSection(title, count) {
+function contextSection(title, count, action = null) {
+  const heading = element(
+    "h3",
+    {},
+    element("span", { text: title }),
+    element("span", { text: String(count) }),
+  );
+  if (action) heading.append(action);
   return element(
     "section",
     { className: "context-section" },
-    element("h3", {}, element("span", { text: title }), element("span", { text: String(count) })),
+    heading,
   );
 }
 
@@ -548,8 +554,45 @@ function relatedDocumentCard(item) {
   return card;
 }
 
+function recentDocumentCard(entry) {
+  const documentItem = entry.document;
+  const card = element(
+    "button",
+    { className: "relation-card recent-document-card", type: "button" },
+    element(
+      "span",
+      {},
+      element("strong", { text: documentItem.title }),
+      element("small", { text: `${pathText(documentItem.path)} · ${formatDate(entry.viewedAt)}` }),
+    ),
+    element("span", { className: "relation-type", text: statusLabel(documentItem.status) }),
+  );
+  card.addEventListener("click", () => navigateToDocument(documentItem.id));
+  return card;
+}
+
 function renderDocumentContext(documentItem) {
   clear(ui.contextView);
+  const recentEntries = window.KnowledgeReadingHistory?.recentEntries(
+    state.documents,
+    { limit: 6 },
+  ) || [];
+  if (recentEntries.length) {
+    const clearRecent = element("button", {
+      className: "context-clear",
+      type: "button",
+      text: "清空",
+      "aria-label": "清空最近阅读记录",
+    });
+    clearRecent.addEventListener("click", () => {
+      window.KnowledgeReadingHistory.clear();
+      renderDocumentContext(documentItem);
+      showToast("已清空最近阅读记录");
+    });
+    const section = contextSection("最近阅读", recentEntries.length, clearRecent);
+    for (const entry of recentEntries) section.append(recentDocumentCard(entry));
+    ui.contextView.append(section);
+  }
   const review = window.KnowledgeLocalReview?.renderControl(documentItem);
   if (review) {
     const section = contextSection("可信状态", 1);
@@ -670,6 +713,7 @@ function navigateToNode(nodeId, updateHash = true) {
 function navigateToDocument(documentId, updateHash = true) {
   const documentItem = state.documents.get(documentId);
   if (!documentItem) return;
+  window.KnowledgeReadingHistory?.record(documentId);
   renderDocumentView(documentId);
   if (updateHash) setHash({ document: documentId });
   ui.contentPanel.scrollTo({ top: 0, behavior: "smooth" });
@@ -703,6 +747,7 @@ function showSearch() {
   window.dispatchEvent(new Event("knowledge:close-review-queue"));
   ui.searchDialog.hidden = false;
   document.body.classList.add("search-open");
+  renderSearchFilters();
   window.setTimeout(() => ui.searchInput.focus(), 0);
 }
 
@@ -715,45 +760,53 @@ function hideSearch() {
   ui.searchTrigger.focus();
 }
 
-function tokenizeQuery(value) {
-  const normalized = value.trim().toLocaleLowerCase("zh-CN");
-  if (!normalized) return [];
-  const spaced = normalized.split(/\s+/).filter(Boolean);
-  return [...new Set([normalized, ...spaced])];
+const SEARCH_FILTERS = window.KnowledgeSearch?.FILTERS || [
+  { value: "all", label: "全部" },
+  { value: "document", label: "知识卡" },
+  { value: "node", label: "专业节点" },
+];
+
+function searchFilterLabel(value = state.searchFilter) {
+  return window.KnowledgeSearch?.filterLabel(value) || "全部";
 }
 
-function scoreSearchItem(item, tokens) {
-  const title = String(item.title || "").toLocaleLowerCase("zh-CN");
-  const path = pathText(item.path).toLocaleLowerCase("zh-CN");
-  const tags = (item.tags || []).join(" ").toLocaleLowerCase("zh-CN");
-  const summary = String(item.summary || "").toLocaleLowerCase("zh-CN");
-  const body = String(item.search_text || "").toLocaleLowerCase("zh-CN");
-  let score = 0;
-  for (const token of tokens) {
-    if (!body.includes(token)) return 0;
-    if (title === token) score += 30;
-    else if (title.includes(token)) score += 12;
-    if (path.includes(token)) score += 7;
-    if (tags.includes(token)) score += 5;
-    if (summary.includes(token)) score += 3;
-    score += Math.max(1, 4 - body.indexOf(token) / 500);
+function renderSearchFilters() {
+  if (!ui.searchFilters) return;
+  clear(ui.searchFilters);
+  for (const filter of SEARCH_FILTERS) {
+    const button = element(
+      "button",
+      {
+        className: "search-filter",
+        type: "button",
+        "aria-pressed": String(state.searchFilter === filter.value),
+        text: filter.label,
+      },
+    );
+    button.addEventListener("click", () => {
+      state.searchFilter = filter.value;
+      renderSearchFilters();
+      runSearch(ui.searchInput.value);
+      ui.searchInput.focus();
+    });
+    ui.searchFilters.append(button);
   }
-  return score;
 }
 
 function runSearch(value) {
-  const tokens = tokenizeQuery(value);
+  const tokens = window.KnowledgeSearch?.tokenizeQuery(value) || [];
   clear(ui.searchResults);
   if (!tokens.length) {
-    ui.searchHint.textContent = "输入关键词开始搜索；支持中文连续匹配。";
+    ui.searchHint.textContent = `输入关键词开始搜索；当前范围：${searchFilterLabel()}。`;
     return;
   }
-  const results = state.search.items
-    .map((item) => ({ item, score: scoreSearchItem(item, tokens) }))
-    .filter((result) => result.score > 0)
-    .sort((left, right) => right.score - left.score || left.item.title.localeCompare(right.item.title, "zh-CN"))
-    .slice(0, 30);
-  ui.searchHint.textContent = results.length ? `找到 ${results.length} 条最相关结果` : "没有找到匹配内容";
+  const results = window.KnowledgeSearch?.search(state.search.items, value, {
+    filter: state.searchFilter,
+    limit: 30,
+  }) || [];
+  ui.searchHint.textContent = results.length
+    ? `找到 ${results.length} 条${searchFilterLabel()}结果`
+    : `当前范围没有找到匹配内容（${searchFilterLabel()}）`;
   for (const result of results) {
     const item = result.item;
     const button = element(
@@ -915,6 +968,27 @@ function renderMapView() {
     element("span", { className: "graph-note", text: "点击节点进入对应知识目录" }),
   );
   view.append(shell);
+  const visibleNodes = visibleGraphNodes();
+  const nodeList = element(
+    "details",
+    { className: "graph-node-list" },
+    element("summary", { text: `列表查看 · ${visibleNodes.length} 个节点` }),
+  );
+  const nodeListItems = element("ul", { className: "graph-node-list-items" });
+  for (const graphNode of visibleNodes) {
+    const nodeItem = state.nodes.get(graphNode.id);
+    if (!nodeItem) continue;
+    const button = element(
+      "button",
+      { type: "button", className: "graph-node-link" },
+      element("strong", { text: nodeItem.name }),
+      element("small", { text: pathText(nodeItem.path) }),
+    );
+    button.addEventListener("click", () => navigateToNode(nodeItem.id));
+    nodeListItems.append(element("li", {}, button));
+  }
+  nodeList.append(nodeListItems);
+  view.append(nodeList);
   ui.contentView.append(view);
   const canvas = shell.querySelector("canvas");
   canvas.addEventListener("click", (event) => {
@@ -970,6 +1044,7 @@ function bindUi() {
   ui.searchDialog = document.getElementById("search-dialog");
   ui.searchInput = document.getElementById("search-input");
   ui.searchHint = document.getElementById("search-hint");
+  ui.searchFilters = document.getElementById("search-filters");
   ui.searchResults = document.getElementById("search-results");
   ui.mobileTabs = [...document.querySelectorAll(".mobile-tabs button")];
   ui.toast = document.getElementById("toast");
@@ -988,6 +1063,7 @@ function bindUi() {
     closer.addEventListener("click", hideSearch);
   }
   ui.searchInput.addEventListener("input", (event) => runSearch(event.target.value));
+  renderSearchFilters();
   for (const button of ui.mobileTabs) {
     button.addEventListener("click", () => setMobilePanel(button.dataset.panel));
   }

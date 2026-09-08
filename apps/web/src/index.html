@@ -12,16 +12,21 @@
     <link rel="manifest" href="./manifest.webmanifest">
     <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
     <link rel="stylesheet" href="./assets/styles.css">
+    <link rel="stylesheet" href="./assets/markdown-reader.css">
     <link rel="stylesheet" href="./assets/local-ingest.css">
     <link rel="stylesheet" href="./assets/local-classification.css">
     <link rel="stylesheet" href="./assets/local-review.css">
     <link rel="stylesheet" href="./assets/local-review-queue.css">
     <script src="./assets/data-source.js" defer></script>
+    <script src="./assets/search-utils.js" defer></script>
     <script src="./assets/related-documents.js" defer></script>
     <script src="./assets/local-ingest.js" defer></script>
     <script src="./assets/local-classification.js" defer></script>
     <script src="./assets/local-review.js" defer></script>
     <script src="./assets/local-review-queue.js" defer></script>
+    <script src="./assets/markdown-reader.js" defer></script>
+    <script src="./assets/reading-history.js" defer></script>
+    <script src="./assets/reading-actions.js" defer></script>
     <script src="./assets/app.js" defer></script>
   </head>
   <body>
@@ -136,6 +141,7 @@
           <input id="search-input" type="search" autocomplete="off" placeholder="输入概念、标题、标签或专业路径">
           <kbd>ESC</kbd>
         </div>
+        <nav class="search-filters" id="search-filters" aria-label="搜索范围"></nav>
         <div class="search-hint" id="search-hint">输入关键词开始搜索；支持中文连续匹配。</div>
         <ol class="search-results" id="search-results"></ol>
       </div>

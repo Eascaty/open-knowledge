@@ -13,7 +13,10 @@ from knowledge_os.operations.review import (
     change_document_review,
 )
 from knowledge_os.processing.artifacts import build_site_data
-from knowledge_os.storage.reviews import review_status_for_document
+from knowledge_os.storage.reviews import (
+    review_metadata_by_document,
+    review_status_for_document,
+)
 
 
 class DocumentReviewTests(unittest.TestCase):
@@ -47,6 +50,7 @@ class DocumentReviewTests(unittest.TestCase):
             "doc",
             "supported",
             expected_status="unverified",
+            note="已核对原文中的 Java 版本说明",
             dry_run=True,
         )
         self.assertTrue(preview.changed)
@@ -60,16 +64,21 @@ class DocumentReviewTests(unittest.TestCase):
             "doc",
             "supported",
             expected_status="unverified",
+            note="已核对原文中的 Java 版本说明",
         )
         self.assertEqual(applied.previous_status, "unverified")
         with db.connect(self.paths.database_file) as connection:
             self.assertEqual(review_status_for_document(connection, "doc"), "supported")
+            metadata = review_metadata_by_document(connection)["doc"]
+            self.assertEqual(metadata["note"], "已核对原文中的 Java 版本说明")
+            self.assertEqual(len(metadata["history"]), 1)
             event = json.loads(
                 connection.execute(
                     "SELECT details_json FROM events WHERE event_type='document_review_status_changed'"
                 ).fetchone()[0]
             )
             self.assertEqual(event["target_status"], "supported")
+            self.assertEqual(event["note"], "已核对原文中的 Java 版本说明")
             canonical = build_site_data(
                 connection,
                 self.paths,
@@ -96,6 +105,42 @@ class DocumentReviewTests(unittest.TestCase):
                 output=self.paths.site_data_dir / "review-test.json",
             )
         self.assertEqual(canonical["documents"][0]["status"], "supported")
+        self.assertEqual(
+            canonical["documents"][0]["review"]["note"],
+            "已核对原文中的 Java 版本说明",
+        )
+
+    def test_same_status_note_change_is_audited_and_stale_note_is_rejected(self) -> None:
+        first = change_document_review(
+            self.root,
+            "doc",
+            "unverified",
+            expected_status="unverified",
+            note="先记录待复核范围",
+        )
+        self.assertTrue(first.changed)
+        second = change_document_review(
+            self.root,
+            "doc",
+            "unverified",
+            expected_status="unverified",
+            expected_note="先记录待复核范围",
+            note="已确认需要补充来源",
+        )
+        self.assertTrue(second.changed)
+        with db.connect(self.paths.database_file) as connection:
+            metadata = review_metadata_by_document(connection)["doc"]
+            self.assertEqual(metadata["note"], "已确认需要补充来源")
+            self.assertEqual(len(metadata["history"]), 2)
+        with self.assertRaises(DocumentReviewError):
+            change_document_review(
+                self.root,
+                "doc",
+                "unverified",
+                expected_status="unverified",
+                expected_note="旧说明",
+                note="不应写入",
+            )
 
     def test_rejects_stale_missing_invalid_and_extra_browser_fields(self) -> None:
         with self.assertRaises(DocumentReviewError):

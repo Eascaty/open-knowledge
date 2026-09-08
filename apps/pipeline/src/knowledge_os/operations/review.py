@@ -11,9 +11,10 @@ from typing import Any, Dict
 from ..config import ProjectPaths
 from ..storage.reviews import (
     DEFAULT_REVIEW_STATUS,
+    MAX_REVIEW_NOTE_LENGTH,
     REVIEW_EVENT_TYPE,
     REVIEW_STATUSES,
-    review_status_for_document,
+    review_metadata_by_document,
 )
 from ..storage.schema import connect, utc_now
 
@@ -27,6 +28,8 @@ class DocumentReviewChange:
     document_id: str
     previous_status: str
     target_status: str
+    previous_note: str
+    note: str
     changed: bool
     dry_run: bool
 
@@ -40,6 +43,8 @@ def change_document_review(
     target_status: str,
     *,
     expected_status: str = DEFAULT_REVIEW_STATUS,
+    note: str = "",
+    expected_note: str = "",
     dry_run: bool = False,
 ) -> DocumentReviewChange:
     root = project_root.expanduser().resolve()
@@ -49,10 +54,18 @@ def change_document_review(
     document_id = document_id.strip()
     target_status = target_status.strip()
     expected_status = expected_status.strip()
+    note = note.strip()
+    expected_note = expected_note.strip()
     if not document_id:
         raise DocumentReviewError("document_id is required")
     if target_status not in REVIEW_STATUSES or expected_status not in REVIEW_STATUSES:
         raise DocumentReviewError("review status is invalid")
+    if len(note) > MAX_REVIEW_NOTE_LENGTH or len(expected_note) > MAX_REVIEW_NOTE_LENGTH:
+        raise DocumentReviewError("review note is too long")
+    if any(ord(char) < 32 and char not in "\n\t" for char in note):
+        raise DocumentReviewError("review note contains invalid characters")
+    if any(ord(char) < 32 and char not in "\n\t" for char in expected_note):
+        raise DocumentReviewError("review note contains invalid characters")
 
     connection = connect(paths.database_file)
     try:
@@ -63,14 +76,21 @@ def change_document_review(
         ).fetchone()
         if document is None:
             raise DocumentReviewError("document does not exist")
-        current_status = review_status_for_document(connection, document_id)
-        if current_status != expected_status:
+        current_review = review_metadata_by_document(connection).get(
+            document_id,
+            {"status": DEFAULT_REVIEW_STATUS, "note": ""},
+        )
+        current_status = current_review["status"]
+        current_note = current_review.get("note", "")
+        if current_status != expected_status or current_note != expected_note:
             raise DocumentReviewError("review status changed since it was loaded")
         result = DocumentReviewChange(
             document_id=document_id,
             previous_status=current_status,
             target_status=target_status,
-            changed=current_status != target_status,
+            previous_note=current_note,
+            note=note,
+            changed=current_status != target_status or current_note != note,
             dry_run=bool(dry_run),
         )
         if dry_run or not result.changed:
@@ -92,6 +112,8 @@ def change_document_review(
                         "document_id": document_id,
                         "previous_status": current_status,
                         "target_status": target_status,
+                        "previous_note": current_note,
+                        "note": note,
                         "method": "manual-review-v1",
                     },
                     ensure_ascii=False,

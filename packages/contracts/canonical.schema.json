@@ -155,6 +155,7 @@
           "type": "array",
           "items": { "$ref": "#/$defs/evidence" }
         },
+        "review": { "$ref": "#/$defs/review" },
         "updated_at": { "type": "string" }
       },
       "additionalProperties": true
@@ -182,6 +183,29 @@
         "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
         "visibility": { "$ref": "#/$defs/visibility" },
         "evidence_ids": { "$ref": "#/$defs/stringList" }
+      },
+      "additionalProperties": true
+    },
+    "review": {
+      "type": "object",
+      "required": ["note", "reviewed_at", "history"],
+      "properties": {
+        "note": { "type": "string", "maxLength": 1000 },
+        "reviewed_at": { "type": "string" },
+        "history": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["previous_status", "status", "note", "reviewed_at"],
+            "properties": {
+              "previous_status": { "type": "string" },
+              "status": { "type": "string" },
+              "note": { "type": "string", "maxLength": 1000 },
+              "reviewed_at": { "type": "string" }
+            },
+            "additionalProperties": true
+          }
+        }
       },
       "additionalProperties": true
     },

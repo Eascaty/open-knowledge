@@ -679,6 +679,30 @@ kbd {
   font-size: 10px;
 }
 
+.reading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 18px 0 2px;
+}
+
+.reading-action,
+.context-clear {
+  padding: 7px 10px;
+  color: var(--teal);
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.reading-action:hover,
+.context-clear:hover {
+  background: white;
+  border-color: #b9cfc9;
+}
+
 .child-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -957,6 +981,14 @@ kbd {
   font-weight: 600;
 }
 
+.context-section h3 .context-clear {
+  margin-left: auto;
+  color: var(--muted);
+  font-family: var(--font-sans);
+  font-size: 9px;
+  font-weight: 500;
+}
+
 .context-section h3 span {
   color: var(--muted);
   font-family: var(--font-sans);
@@ -1202,6 +1234,29 @@ kbd {
   border-color: var(--line);
 }
 
+.search-filters {
+  display: flex;
+  gap: 7px;
+  padding: 11px 15px 0;
+}
+
+.search-filter {
+  padding: 6px 10px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.search-filter:hover,
+.search-filter[aria-pressed="true"] {
+  color: #356966;
+  background: var(--teal-soft);
+  border-color: #b9cfc9;
+}
+
 .search-hint {
   padding: 13px 18px;
   color: var(--muted);
@@ -1347,6 +1402,63 @@ kbd {
   border-radius: 8px;
   font-size: 9px;
   backdrop-filter: blur(8px);
+}
+
+.graph-node-list {
+  margin-top: 12px;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.graph-node-list summary {
+  padding: 12px 14px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.graph-node-list-items {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 7px;
+  margin: 0;
+  padding: 0 10px 10px;
+  list-style: none;
+}
+
+.graph-node-link {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 10px;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.graph-node-link:hover,
+.graph-node-link:focus-visible {
+  border-color: #b9cfc9;
+  box-shadow: 0 0 0 2px rgb(67 133 127 / 10%);
+}
+
+.graph-node-link strong {
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graph-node-link small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mobile-tabs {

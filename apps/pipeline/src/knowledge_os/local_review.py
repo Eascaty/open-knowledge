@@ -13,6 +13,7 @@ from .operations.review import (
     DocumentReviewError,
     change_document_review,
 )
+from .storage.reviews import MAX_REVIEW_NOTE_LENGTH
 
 
 REVIEW_PATH = "/__knowledge/review"
@@ -22,6 +23,8 @@ _ALLOWED_FIELDS = {
     "document_id",
     "target_status",
     "expected_status",
+    "note",
+    "expected_note",
 }
 
 
@@ -41,6 +44,8 @@ class BrowserReviewRequest:
     document_id: str
     target_status: str
     expected_status: str
+    note: str
+    expected_note: str
 
     @property
     def dry_run(self) -> bool:
@@ -56,6 +61,18 @@ def _text(payload: Mapping[str, Any], key: str) -> str:
         ord(char) < 32 for char in normalized
     ):
         raise BrowserReviewError(400, "invalid_request", "审核参数格式无效")
+    return normalized
+
+
+def _note(payload: Mapping[str, Any], key: str) -> str:
+    value = payload.get(key, "")
+    if not isinstance(value, str):
+        raise BrowserReviewError(400, "invalid_request", "审核说明格式无效")
+    normalized = value.strip()
+    if len(normalized) > MAX_REVIEW_NOTE_LENGTH or any(
+        ord(char) < 32 and char not in "\n\t" for char in normalized
+    ):
+        raise BrowserReviewError(400, "invalid_request", "审核说明格式无效")
     return normalized
 
 
@@ -76,6 +93,8 @@ def parse_review_request(body: bytes) -> BrowserReviewRequest:
         document_id=_text(payload, "document_id"),
         target_status=_text(payload, "target_status"),
         expected_status=_text(payload, "expected_status"),
+        note=_note(payload, "note"),
+        expected_note=_note(payload, "expected_note"),
     )
 
 
@@ -90,6 +109,8 @@ def change_browser_review(
                 request.document_id,
                 request.target_status,
                 expected_status=request.expected_status,
+                note=request.note,
+                expected_note=request.expected_note,
                 dry_run=request.dry_run,
             )
     except LockUnavailable as exc:

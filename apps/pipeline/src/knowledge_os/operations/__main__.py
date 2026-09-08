@@ -9,16 +9,24 @@ from pathlib import Path
 from typing import Any, Optional, Sequence
 
 from ..config import ProjectPaths
+from ..publish import PublishError, cloudflare_publish_plan
 from .classification import (
     ClassificationCorrectionError,
     correct_document_classification,
 )
+from .checks import check_site_bundle
 from .gate import run_prebuild_gate
 from .health import run_health_checks, write_health_report
 from .lock import LockUnavailable, ProjectLock
 from .migration import migrate_project_database
 from .restore import RestoreDrillError, run_restore_drill
 from .snapshot import SnapshotError, create_sqlite_snapshot
+from .project_backup import (
+    ProjectBackupError,
+    package_project,
+    verify_project_backup,
+)
+from .site_package import SitePackageError, package_site, verify_site_package
 
 
 def _emit(value: Any) -> None:
@@ -46,6 +54,32 @@ def _gate(arguments: argparse.Namespace) -> int:
         }
     )
     return 0 if result.allowed else 1
+
+
+def _publish_plan(arguments: argparse.Namespace) -> int:
+    root = arguments.root.expanduser().resolve()
+    with ProjectLock(root, purpose="publish-plan"):
+        result = cloudflare_publish_plan(
+            root,
+            project_name=arguments.project_name,
+            visibility=arguments.visibility,
+        )
+    _emit(
+        {
+            "ok": True,
+            "executed": result.executed,
+            "ready": result.ready,
+            "summary": result.summary,
+            "command": list(result.command),
+            "gate": {
+                "allowed": result.gate.allowed,
+                "summary": result.gate.summary,
+                "checks": [check.to_dict() for check in result.gate.checks],
+            },
+            "network": False,
+        }
+    )
+    return 0 if result.ready else 1
 
 
 def _backup(arguments: argparse.Namespace) -> int:
@@ -113,6 +147,118 @@ def _restore_drill(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _package_site(arguments: argparse.Namespace) -> int:
+    root = arguments.root.expanduser().resolve()
+    paths = ProjectPaths.from_root(root)
+    source = (
+        arguments.source.expanduser().resolve()
+        if arguments.source
+        else paths.site_dir / "dist"
+    )
+    output = (
+        arguments.output.expanduser().resolve()
+        if arguments.output
+        else paths.private_exports_dir / "site-packages"
+    )
+    if not _path_within_workspace(source, root):
+        raise SitePackageError("site package source must stay inside the project")
+    if not _path_within_workspace(output, paths.workspace_dir):
+        raise SitePackageError("site package output must stay inside workspace")
+    with ProjectLock(root, purpose="package-site"):
+        bundle_check = check_site_bundle(source, expected_visibility=arguments.visibility)
+        if not bundle_check.passed:
+            raise SitePackageError(
+                "site bundle check failed: {}".format(bundle_check.summary)
+            )
+        result = package_site(source, output, visibility=arguments.visibility)
+    _emit(
+        {
+            "ok": True,
+            "source": str(result.source),
+            "package": str(result.package),
+            "visibility": result.visibility,
+            "sha256": result.sha256,
+            "file_count": result.file_count,
+            "size_bytes": result.size_bytes,
+            "created_at": result.created_at,
+            "uploaded": False,
+        }
+    )
+    return 0
+
+
+def _verify_site_package(arguments: argparse.Namespace) -> int:
+    result = verify_site_package(arguments.package, expected_sha256=arguments.sha256)
+    _emit(
+        {
+            "ok": True,
+            "package": str(result.package),
+            "visibility": result.visibility,
+            "sha256": result.sha256,
+            "file_count": result.file_count,
+            "total_bytes": result.total_bytes,
+            "integrity": result.integrity,
+            "extracted": False,
+        }
+    )
+    return 0
+
+
+def _backup_bundle(arguments: argparse.Namespace) -> int:
+    root = arguments.root.expanduser().resolve()
+    paths = ProjectPaths.from_root(root)
+    output = (
+        arguments.output.expanduser().resolve()
+        if arguments.output
+        else paths.private_exports_dir / "project-backups"
+    )
+    if not _path_within_workspace(output, paths.workspace_dir):
+        raise ProjectBackupError("backup output must stay inside workspace")
+    with ProjectLock(root, purpose="backup-bundle"):
+        result = package_project(root, output)
+    _emit(
+        {
+            "ok": True,
+            "source": str(result.source),
+            "package": str(result.package),
+            "sha256": result.sha256,
+            "file_count": result.file_count,
+            "total_bytes": result.total_bytes,
+            "schema_version": result.schema_version,
+            "size_bytes": result.size_bytes,
+            "created_at": result.created_at,
+            "uploaded": False,
+        }
+    )
+    return 0
+
+
+def _verify_backup_bundle(arguments: argparse.Namespace) -> int:
+    result = verify_project_backup(arguments.package, expected_sha256=arguments.sha256)
+    _emit(
+        {
+            "ok": True,
+            "package": str(result.package),
+            "sha256": result.sha256,
+            "file_count": result.file_count,
+            "total_bytes": result.total_bytes,
+            "schema_version": result.schema_version,
+            "integrity": result.integrity,
+            "extracted": False,
+            "live_database_modified": False,
+        }
+    )
+    return 0
+
+
+def _path_within_workspace(path: Path, workspace: Path) -> bool:
+    try:
+        path.relative_to(workspace)
+    except ValueError:
+        return False
+    return True
+
+
 def _manual_classify(arguments: argparse.Namespace) -> int:
     root = arguments.root.expanduser().resolve()
     with ProjectLock(root, purpose="manual-classification"):
@@ -144,6 +290,16 @@ def build_parser() -> argparse.ArgumentParser:
     gate = commands.add_parser("gate", help="运行离线发布门禁")
     gate.set_defaults(handler=_gate)
 
+    publish_plan = commands.add_parser(
+        "publish-plan",
+        help="检查 Cloudflare Pages 发布计划，不联网、不执行上传",
+    )
+    publish_plan.add_argument("--project-name", required=True)
+    publish_plan.add_argument(
+        "--visibility", choices=("private", "public"), default="private"
+    )
+    publish_plan.set_defaults(handler=_publish_plan)
+
     backup = commands.add_parser("backup", help="生成经过完整性验证的 SQLite 快照")
     backup.add_argument("--output", type=Path)
     backup.set_defaults(handler=_backup)
@@ -160,6 +316,39 @@ def build_parser() -> argparse.ArgumentParser:
     restore.add_argument("snapshot", type=Path)
     restore.add_argument("--sha256")
     restore.set_defaults(handler=_restore_drill)
+
+    package = commands.add_parser(
+        "package-site",
+        help="把已构建站点打成带清单和 SHA-256 的本地分享包",
+    )
+    package.add_argument(
+        "--visibility", choices=("private", "public"), default="private"
+    )
+    package.add_argument("--source", type=Path)
+    package.add_argument("--output", type=Path)
+    package.set_defaults(handler=_package_site)
+
+    verify_package = commands.add_parser(
+        "verify-site-package", help="离线验证站点分享包，不解压、不覆盖任何文件"
+    )
+    verify_package.add_argument("package", type=Path)
+    verify_package.add_argument("--sha256")
+    verify_package.set_defaults(handler=_verify_site_package)
+
+    backup_bundle = commands.add_parser(
+        "backup-bundle",
+        help="备份数据库快照、原始资料、Vault 和站点数据到本地私密包",
+    )
+    backup_bundle.add_argument("--output", type=Path)
+    backup_bundle.set_defaults(handler=_backup_bundle)
+
+    verify_backup = commands.add_parser(
+        "verify-backup-bundle",
+        help="离线核验完整知识备份包，不覆盖正式数据库",
+    )
+    verify_backup.add_argument("package", type=Path)
+    verify_backup.add_argument("--sha256")
+    verify_backup.set_defaults(handler=_verify_backup_bundle)
 
     classify = commands.add_parser(
         "manual-classify",
@@ -182,6 +371,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         ClassificationCorrectionError,
         RestoreDrillError,
         SnapshotError,
+        SitePackageError,
+        ProjectBackupError,
+        PublishError,
         OSError,
         RuntimeError,
         ValueError,

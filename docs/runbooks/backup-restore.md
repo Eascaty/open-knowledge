@@ -1,6 +1,6 @@
-# SQLite 备份、恢复演练与迁移手册
+# 本地备份、分享包、恢复演练与迁移手册
 
-本手册只处理 `workspace/data/state/knowledge.sqlite3`。原始资料、Vault 和网站都是独立目录；不要把复制数据库文件当作整个项目的完整备份。
+本手册涵盖 SQLite 快照、完整私密备份包、站点分享包及数据库恢复演练。原始资料、Vault 和网站都是独立目录；不要把复制数据库文件当作整个项目的完整备份。当前恢复演练只验证数据库，尚未提供整包恢复到新目录的流程。
 
 ## 日常备份
 
@@ -17,6 +17,58 @@ workspace/exports/private/backups/
 ```
 
 不要直接复制正在使用的 `knowledge.sqlite3`、`-wal` 或 `-shm` 文件作为备份。
+
+如果需要同时保存数据库之外的原始资料、Vault 和已构建站点，可创建完整项目备份包：
+
+```bash
+./scripts/backup-bundle
+```
+
+默认输出到 `workspace/exports/private/project-backups/`。备份包包含 SQLite 一致性快照、
+配置、inbox、raw、normalized、quarantine、Vault、站点数据和站点构建，并写入逐文件
+SHA-256 清单；不包含上传凭据，也不会联网。归档先写入私密临时候选，自动通过逐文件摘要与 SQLite 验证后才原子发布最终 ZIP；验证失败会清理候选，已有成功备份保持不变。自动核验会额外读取归档并检查数据库，耗时随备份大小增加。
+
+复制或存放备份包后，仍可再次离线核验，以发现后续损坏：
+
+```bash
+./scripts/verify-backup-bundle /absolute/path/to/knowledge-backup.zip \
+  --sha256 <备份时记录的64位SHA-256>
+```
+
+核验只读取压缩包并在临时目录检查 SQLite 完整性，不会解压覆盖项目文件，也不会修改正式数据库。
+
+## 生成可分享站点包
+
+如果只想把已经构建好的知识网站放到自己的云盘或静态托管，运行：
+
+```bash
+./scripts/package-site --visibility private
+```
+
+命令会先检查 `workspace/site/dist` 的构建清单和可见性，再在
+`workspace/exports/private/site-packages/` 生成带 `knowledge-site-package.json`
+清单和 SHA-256 的 ZIP。包里只有站点文件，不包含 SQLite、原始资料、Vault、日志、
+运行配置或上传凭据；命令本身不联网、不上传。把 ZIP 解压到你选择的静态托管目录后，
+仍应由你自行配置访问控制，不能把 `private` 包当成认证方案。
+
+如果准备使用 Cloudflare Pages，可以先检查发布计划：
+
+```bash
+./scripts/publish-plan \
+  --project-name your-pages-project \
+  --visibility private
+```
+
+该命令只执行本地数据库、站点、隐私和断链门禁，输出待执行的 `wrangler` 命令，
+不会登录 Cloudflare、联网或上传文件。只有确认 Cloudflare Access 已启用后，才允许
+在独立的发布流程中执行真实上传。
+
+拿到 ZIP 后可用以下命令核对整体和逐文件摘要；命令只读取压缩包，不会解压：
+
+```bash
+./scripts/verify-site-package /absolute/path/to/site-package.zip \
+  --sha256 <package-sha256>
+```
 
 ## 恢复演练
 

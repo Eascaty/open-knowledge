@@ -67,6 +67,11 @@ def sample_data():
                 "evidence": [],
                 "tags": ["私密"],
                 "visibility": "private",
+                "review": {
+                    "note": "PRIVATE_REVIEW_SENTINEL",
+                    "reviewed_at": "2026-09-06T00:00:00Z",
+                    "history": [],
+                },
             },
         ],
         "relations": [],
@@ -88,6 +93,7 @@ class SiteBuilderTests(unittest.TestCase):
             )
             self.assertEqual(result.document_count, 1)
             self.assertNotIn("PRIVATE_SENTINEL", payload)
+            self.assertNotIn("PRIVATE_REVIEW_SENTINEL", payload)
             self.assertNotIn("X-Amz-Signature", payload)
             self.assertNotIn("secret", payload)
             document = json.loads(payload)["documents"][0]
@@ -97,6 +103,16 @@ class SiteBuilderTests(unittest.TestCase):
             self.assertEqual(document["source_line_end"], 20)
             self.assertEqual(document["splitter_version"], "markdown-h2-v1")
             self.assertRegex(document["body_sha256"], r"^[0-9a-f]{64}$")
+
+    def test_private_bundle_keeps_review_metadata(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "private"
+            build_site(sample_data(), output, visibility="private")
+            payload = json.loads(
+                (output / "data" / "site-data.json").read_text(encoding="utf-8")
+            )
+            private = next(item for item in payload["documents"] if item["id"] == "private")
+            self.assertEqual(private["review"]["note"], "PRIVATE_REVIEW_SENTINEL")
 
     def test_private_bundle_is_noindex_and_does_not_cache_data(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -117,6 +133,8 @@ class SiteBuilderTests(unittest.TestCase):
             self.assertIn("./assets/local-ingest.css", worker)
             self.assertIn("./assets/local-review-queue.js", worker)
             self.assertIn("./assets/local-review-queue.css", worker)
+            self.assertIn("./assets/reading-history.js", worker)
+            self.assertIn("./assets/reading-actions.js", worker)
             self.assertIn('pathname.includes("/__knowledge/")', worker)
             self.assertIn('pathname.endsWith("/build-meta.json")', worker)
             self.assertLess(
@@ -141,6 +159,8 @@ class SiteBuilderTests(unittest.TestCase):
             self.assertTrue(
                 (output / "assets" / "local-review-queue.css").is_file()
             )
+            self.assertTrue((output / "assets" / "reading-history.js").is_file())
+            self.assertTrue((output / "assets" / "reading-actions.js").is_file())
 
     def test_private_worker_only_uses_install_time_shell_cache(self):
         with tempfile.TemporaryDirectory() as temporary:

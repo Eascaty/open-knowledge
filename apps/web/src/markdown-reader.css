@@ -1,0 +1,35 @@
+.knowledge-body.markdown-body { white-space: normal; overflow-wrap: anywhere; }
+.markdown-body p, .markdown-body blockquote { white-space: pre-wrap; }
+.markdown-body h2, .markdown-body h3, .markdown-body h4,
+.markdown-body h5, .markdown-body h6 { margin: 1.8em 0 .7em; scroll-margin-top: 100px; line-height: 1.4; }
+.markdown-body h2 { font-size: 1.5em; }
+.markdown-body h3 { font-size: 1.3em; }
+.markdown-body h4, .markdown-body h5, .markdown-body h6 { font-size: 1.1em; }
+.markdown-body ul, .markdown-body ol { padding-left: 1.8em; list-style-position: outside; }
+.markdown-body ul { list-style-type: disc; }
+.markdown-body ol { list-style-type: decimal; }
+.markdown-body li { margin: .35em 0; }
+.markdown-body li::before { content: none; }
+.markdown-body code { font-family: monospace; background: var(--surface-soft); padding: .1em .3em; border-radius: 4px; }
+.markdown-body pre { max-width: 100%; overflow-x: auto; padding: 16px; color: #e6eaf1; background: #182334; border-radius: 10px; white-space: pre; overflow-wrap: normal; }
+.markdown-body pre code { padding: 0; background: transparent; color: inherit; }
+.markdown-body blockquote { margin: 1em 0; padding: 10px 16px; border-left: 3px solid var(--teal); background: var(--surface-soft); }
+.markdown-body a { color: var(--teal); text-decoration: underline; }
+.markdown-body hr { border: 0; border-top: 1px solid var(--line); margin: 1.5em 0; }
+.markdown-table-scroll { max-width: 100%; overflow-x: auto; margin: 1em 0; }
+.markdown-body table { border-collapse: collapse; min-width: 100%; }
+.markdown-body th, .markdown-body td { padding: 9px 12px; border: 1px solid var(--line); text-align: left; min-width: 100px; }
+.markdown-body th { background: var(--surface-soft); }
+.markdown-download { padding: 8px 12px; color: var(--teal); background: var(--surface-soft); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; font: inherit; font-size: 11px; }
+.markdown-outline { margin-bottom: 20px; padding: 12px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); }
+.markdown-outline summary { cursor: pointer; color: var(--teal); font-size: 12px; }
+.markdown-outline nav { display: grid; gap: 4px; max-height: 260px; overflow-y: auto; margin-top: 10px; }
+.markdown-outline button { border: 0; background: transparent; color: var(--ink); text-align: left; padding: 6px 0; cursor: pointer; font: inherit; font-size: 12px; overflow-wrap: anywhere; }
+.markdown-outline button:hover { color: var(--teal); text-decoration: underline; }
+.markdown-outline .markdown-outline-level-3,
+.markdown-outline .markdown-outline-level-4,
+.markdown-outline .markdown-outline-level-5,
+.markdown-outline .markdown-outline-level-6 { padding-left: 14px; }
+@media (max-width: 680px) {
+  .markdown-reader > .section-title { flex-wrap: wrap; gap: 10px; }
+}

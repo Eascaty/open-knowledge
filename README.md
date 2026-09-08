@@ -20,6 +20,8 @@
 
 在线 Demo 只使用仓库中三份虚构测试资料，由 GitHub Actions 在隔离临时目录重新构建，并在隐私、密钥、断链、数据库和 public 可见性门禁全部通过后发布。它不会读取或上传维护者本机的真实 `workspace/`、SQLite、Vault 或私密网站。
 
+产品方向与后续工作见 [完整分析方案](docs/product-strategy-2026-09-08.md)和[执行清单](docs/product-roadmap.md)。
+
 ## 这个项目能做什么
 
 如果你的学习笔记、技术文档和资料长期散落在不同文件夹里，这个项目可以帮助你完成下面这条流水线：
@@ -136,6 +138,7 @@ cp tests/fixtures/java_g1.md workspace/inbox/files/
 - `.html`、`.htm`
 - `.docx`
 - `.pdf`：需要系统可用的 `pdftotext`，未安装时会给出明确提示
+- ChatGPT/Gemini 官方导出的 JSON、HTML 或 ZIP：通过本地导入脚本解析，不连接账号
 
 较长的 Markdown 会按二级标题拆成多张知识卡，每张卡独立提炼、分类和检索；原始文件保持不变。系统会在卡片中记录标题路径、原文行号、正文哈希和拆分器版本，便于网页、API 与未来 App 回到同一来源。
 
@@ -159,6 +162,12 @@ cp tests/fixtures/java_g1.md workspace/inbox/files/
 知识卡右侧还会显示“可信状态”。你可以把自动生成的“待验证”调整为“个人认知”“有证据支持”“实践验证”“存在争议”或“已过时”；每次操作都先预览再确认，并自动重建网站。可信状态是独立的人工判断，不会改写原文、来源证据或专业路径，公开静态网站不会显示审核入口。
 
 本机页面顶部的“复核”会汇总整个知识库的可信状态，并优先列出“存在争议”“已过时”和“待验证”的知识。你可以按状态筛选后直接打开下一张知识卡处理；资料较多时会分批显示，避免一次渲染拖慢页面。这个队列完全读取当前私密站点数据，不调用模型或网络，也不会出现在公开静态网站中。
+
+知识正文会按 Markdown 结构排版：标题、列表、引用、表格、代码块、链接和粗斜体都可以直接阅读。较长正文会生成可折叠的本文目录，点击目录可以跳到对应小节；“下载 Markdown”会把当前知识卡的正文原样保存到本地。
+
+可信审核可以附加简短说明，私密知识卡会保留最近说明和追加式历史，便于知道为什么改变状态；公开构建会移除这些个人审核笔记。
+
+知识详情下方的阅读操作可以复制当前卡片链接或正文，右侧“最近阅读”会保留最近打开的最多8张卡片，方便在专业树与跨领域关系之间往返。它只写浏览器本地存储中的卡片 ID 和时间，不会写入 SQLite、静态站或公开构建；在浏览器隐私模式下不可用时，阅读仍不受影响。
 
 常用命令：
 
@@ -184,11 +193,23 @@ cp tests/fixtures/java_g1.md workspace/inbox/files/
 # 直接导入一段文本
 ./scripts/kb ingest --text "今天学习了 G1 Mixed GC" --title "G1 学习记录"
 
+# 预览 ChatGPT/Gemini 导出，不写入项目
+./scripts/import-chat-export ~/Downloads/conversations.json --provider auto --dry-run
+
+# 导入导出文件；结果写入私密 workspace，知识管家会继续处理
+./scripts/import-chat-export ~/Downloads/conversations.json --provider chatgpt
+
 # 执行数据库、隐私、密钥和断链检查
 ./scripts/doctor
 
 # 创建 SQLite 一致性备份
 ./scripts/backup
+
+# 创建包含数据库、原始资料、Vault 和站点数据的完整私密备份包（不联网）
+./scripts/backup-bundle
+
+# 离线核验完整备份包，不覆盖正式数据库
+./scripts/verify-backup-bundle /absolute/path/to/knowledge-backup.zip --sha256 <digest>
 
 # 用固定虚构资料执行批量、幂等、失败隔离验收
 ./scripts/acceptance
@@ -196,11 +217,20 @@ cp tests/fixtures/java_g1.md workspace/inbox/files/
 # 在临时候选库中验证某个快照，不覆盖正式数据库
 ./scripts/restore-drill /absolute/path/to/snapshot.sqlite3 --sha256 <digest>
 
+# 把已通过门禁的私密静态站点打成可自行上传的分享包（不联网）
+./scripts/package-site --visibility private
+
+# 上传前后离线核验分享包，不解压、不覆盖项目文件
+./scripts/verify-site-package /absolute/path/to/site-package.zip --sha256 <digest>
+
+# 检查 Cloudflare Pages 发布计划；只跑本地门禁，不联网、不上传
+./scripts/publish-plan --project-name your-pages-project --visibility private
+
 # 运行 Python 测试
 ./scripts/test
 ```
 
-重复投入同一个文件不会生成重复资料：系统使用 SHA-256 去重，处理任务也可以安全重试。
+重复投入同一个文件不会生成重复资料：系统使用 SHA-256 去重，处理任务也可以安全重试。聊天导入会按会话内容生成稳定文件名，同一份导出重复执行也不会覆盖或重复入库。
 
 ## 从 SQLite schema v1 升级
 

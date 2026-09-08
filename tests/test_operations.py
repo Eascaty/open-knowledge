@@ -4,6 +4,8 @@ import json
 import sqlite3
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from unittest import mock
 
@@ -23,6 +25,7 @@ from knowledge_os.operations.checks import (
     check_privacy,
 )
 from knowledge_os.publish import cloudflare_publish_plan
+from knowledge_os.operations.__main__ import build_parser
 from knowledge_os.site import build_site
 
 
@@ -162,6 +165,34 @@ class OperationsTests(unittest.TestCase):
             subprocess_run.assert_not_called()
             self.assertFalse(plan.executed)
             self.assertTrue(plan.ready)
+
+    def test_publish_plan_cli_is_offline_and_explicit(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self._project(root)
+            arguments = build_parser().parse_args(
+                [
+                    "--root",
+                    str(root),
+                    "publish-plan",
+                    "--project-name",
+                    "personal-knowledge",
+                ]
+            )
+            output = StringIO()
+            with mock.patch(
+                "knowledge_os.publish.cloudflare.shutil.which",
+                return_value="/fake/wrangler",
+            ), mock.patch(
+                "knowledge_os.publish.cloudflare.subprocess.run"
+            ) as subprocess_run, redirect_stdout(output):
+                exit_code = arguments.handler(arguments)
+            payload = json.loads(output.getvalue())
+            self.assertEqual(exit_code, 0)
+            self.assertTrue(payload["ready"])
+            self.assertFalse(payload["executed"])
+            self.assertFalse(payload["network"])
+            subprocess_run.assert_not_called()
 
     def test_health_checks_explicit_candidate_instead_of_live_site(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
