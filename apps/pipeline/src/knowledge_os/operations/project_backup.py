@@ -135,7 +135,7 @@ def package_project(
     project_root: PathLike,
     output_directory: PathLike,
 ) -> ProjectBackupResult:
-    """Package project state and a consistent SQLite snapshot without uploading."""
+    """Verify a private candidate before publishing the complete backup bundle."""
 
     root = Path(project_root).expanduser().resolve()
     paths = ProjectPaths.from_root(root)
@@ -212,6 +212,9 @@ def package_project(
                 manifest_info.external_attr = 0o100600 << 16
                 archive.writestr(manifest_info, manifest_bytes)
             digest = _sha256(temporary_zip)
+            # Verify the bytes actually written, including the SQLite snapshot,
+            # before the candidate can appear as a usable final backup.
+            verify_project_backup(temporary_zip, expected_sha256=digest)
             stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
             final_path = output / "knowledge-backup-{}-{}.zip".format(stamp, digest[:12])
             if final_path.exists():

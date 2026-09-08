@@ -1,6 +1,6 @@
-# SQLite 备份、恢复演练与迁移手册
+# 本地备份、分享包、恢复演练与迁移手册
 
-本手册只处理 `workspace/data/state/knowledge.sqlite3`。原始资料、Vault 和网站都是独立目录；不要把复制数据库文件当作整个项目的完整备份。
+本手册涵盖 SQLite 快照、完整私密备份包、站点分享包及数据库恢复演练。原始资料、Vault 和网站都是独立目录；不要把复制数据库文件当作整个项目的完整备份。当前恢复演练只验证数据库，尚未提供整包恢复到新目录的流程。
 
 ## 日常备份
 
@@ -26,7 +26,9 @@ workspace/exports/private/backups/
 
 默认输出到 `workspace/exports/private/project-backups/`。备份包包含 SQLite 一致性快照、
 配置、inbox、raw、normalized、quarantine、Vault、站点数据和站点构建，并写入逐文件
-SHA-256 清单；不包含上传凭据，也不会联网。拿到备份包后先离线核验：
+SHA-256 清单；不包含上传凭据，也不会联网。归档先写入私密临时候选，自动通过逐文件摘要与 SQLite 验证后才原子发布最终 ZIP；验证失败会清理候选，已有成功备份保持不变。自动核验会额外读取归档并检查数据库，耗时随备份大小增加。
+
+复制或存放备份包后，仍可再次离线核验，以发现后续损坏：
 
 ```bash
 ./scripts/verify-backup-bundle /absolute/path/to/knowledge-backup.zip \
