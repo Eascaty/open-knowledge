@@ -11,6 +11,7 @@ import traceback
 import urllib.parse
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from socketserver import TCPServer
 from typing import Any, BinaryIO, Dict, Mapping, Protocol
 
 from .local_classification import (
@@ -76,6 +77,13 @@ class ManagerHttpServer(ThreadingHTTPServer):
     allow_reuse_address = True
 
     manager: ManagerHttpApi
+
+    def server_bind(self) -> None:
+        # HTTPServer normally reverse-resolves the bound address. A loopback
+        # service does not need DNS, which can stall startup on offline hosts.
+        TCPServer.server_bind(self)
+        self.server_name = DEFAULT_HOST
+        self.server_port = int(self.server_address[1])
 
 
 class ManagerRequestHandler(SimpleHTTPRequestHandler):
