@@ -58,7 +58,11 @@ class LocalPackageTests(unittest.TestCase):
             def command(*args):
                 result = subprocess.run(args, cwd=install, env=environment, text=True,
                                         capture_output=True, timeout=60)
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                diagnostic = result.stdout + result.stderr
+                log = install / "workspace/data/logs/local-manager.log"
+                if result.returncode and log.exists():
+                    diagnostic += "\nFixture manager log:\n" + log.read_text()[-8000:]
+                self.assertEqual(result.returncode, 0, diagnostic)
                 return result.stdout
             command('sh', 'scripts/kb', 'init')
             inbox = install / 'workspace/inbox/files'
