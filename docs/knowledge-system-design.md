@@ -688,3 +688,12 @@ raw_auto_delete: false
 - SQLite FTS5: <https://www.sqlite.org/fts5.html>
 - Ollama API: <https://docs.ollama.com/api/introduction>
 - macOS launchd: <https://support.apple.com/guide/terminal/script-management-with-launchd-apdc6c1077b/mac>
+
+
+### 本地产品交付边界
+
+`scripts/package-local` 从受版本控制的 Python/Web 程序文件与明确列出的命令、canonical 契约、许可证、安装手册及虚构示例生成本地 tar.gz 包。保留现有资源相对目录，包自身即运行根；不读取真实 workspace、config/runtime.json、账号导出、数据库或 Java 构建产物，不使用网络或付费服务。首次启动才初始化默认配置与私密数据目录。
+
+归档记录基线提交、实际文件摘要、版本与权限，固定时间戳以保证相同输入可重复构建；旁置 SHA-256 校验整体归档。用户需要 Python 3.9+ 与浏览器，运行不依赖 Git/Java/Docker；macOS/Linux 通过解包后的独立目录测试，Windows 原生和内置 Python 发行仍为后续事项。此布局不改变 Python wheel 的资源边界，不宣称现有 wheel 已独立可用。
+
+Release 在既有测试和版本门禁之后同时生成本地产品包与 Java 附件。升级先在新目录使用 L03 恢复备份并验证，保留旧目录回退；不原地覆盖运行中的程序与数据。详见 `docs/runbooks/local-install.md`。

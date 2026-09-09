@@ -62,6 +62,12 @@
 
 它目前不是 Notion 的完整替代品，也不是多人协作 SaaS。项目优先保证单机隐私、数据可迁移和处理过程可审计。
 
+## 本地产品包
+
+当前源码可运行 `./scripts/package-local` 生成完整本地程序包及 SHA-256，默认保存在 `workspace/exports/private/local-packages/`。包内不包含真实资料，解压后只需 Python 3.9+ 和浏览器，不要求 Git、Java 或 Docker。macOS/Linux 的独立目录验收由 CI 执行；Windows 尚未支持。
+
+正式 Release 将附带 `knowledge-local-*.tar.gz`，当前尚未发布包含此包的新版本。安装、首次使用、升级与卸载见[本地安装手册](docs/runbooks/local-install.md)。本包保留程序资源目录，不是单独的 Python wheel，也尚未内置 Python。
+
 ## 三分钟体验
 
 ### 1. 准备环境
