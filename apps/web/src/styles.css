@@ -1772,3 +1772,13 @@ kbd {
     transition-duration: 0.01ms !important;
   }
 }
+
+
+.first-use { margin: 0 0 24px; padding: 24px; border: 1px solid var(--border, #ccd6e2); border-radius: 16px; background: var(--surface, #f4f7fb); color: var(--text, #182638); }
+.first-use[hidden] { display: none; }
+.first-use h2 { margin: 0 0 12px; font-size: 1.35rem; }
+.first-use p, .first-use li { line-height: 1.65; }
+.first-use-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0; }
+.first-use button { padding: 10px 16px; border: 1px solid #496a96; border-radius: 9px; background: #edf3fb; color: #213e65; cursor: pointer; font: inherit; }
+.first-use button:focus-visible { outline: 3px solid #5488cd; outline-offset: 3px; }
+@media (max-width: 600px) { .first-use { padding: 16px; } .first-use-actions button { width: 100%; } }

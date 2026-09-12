@@ -16,6 +16,7 @@ REQUIRED_ASSETS = (
     "search-utils.js",
     "related-documents.js",
     "app.js",
+    "first-use.js",
     "styles.css",
     "markdown-reader.js",
     "markdown-reader.css",

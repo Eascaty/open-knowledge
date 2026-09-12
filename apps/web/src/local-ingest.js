@@ -555,6 +555,21 @@
       void this.refreshStatus(true);
     }
 
+    previewNote(note) {
+      if (!this.session || !this.ui || this.ui.paste.hidden) return false;
+      this.openDialog();
+      this.ui.paste.open = true;
+      if (this.ui.pasteTitle.value.trim() || this.ui.pasteContent.value.trim()) {
+        this.notify("已有未提交的文字，请先处理当前草稿；示例未覆盖它");
+        return false;
+      }
+      this.ui.pasteTitle.value = note.title;
+      this.ui.pasteContent.value = note.content;
+      this.updatePasteState();
+      this.window.setTimeout(() => this.ui.pasteContent.focus(), 0);
+      return true;
+    }
+
     closeDialog(restoreFocus = true) {
       if (this.ui.dialog.hidden) return;
       this.ui.dialog.hidden = true;

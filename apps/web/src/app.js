@@ -1104,11 +1104,9 @@ function showFatalError(error) {
 
 async function start() {
   bindUi();
-  if (window.KnowledgeLocalIngest) {
-    void window.KnowledgeLocalIngest.mount({ notify: showToast }).catch(() => {
-      // A static/public build intentionally has no writable local manager.
-    });
-  }
+  const localIngest = window.KnowledgeLocalIngest
+    ? window.KnowledgeLocalIngest.mount({ notify: showToast }).catch(() => null)
+    : Promise.resolve(null);
   try {
     const dataSource = window.KnowledgeDataSources.fromDocument(document);
     const { data, search, graph } = await dataSource.loadWorkspace();
@@ -1149,6 +1147,10 @@ async function start() {
       readRoute();
     }
     ui.app.setAttribute("aria-busy", "false");
+    void localIngest.then((controller) => window.KnowledgeFirstUse?.mount({
+      container: document.getElementById("first-use"), data, controller,
+      openDocument: navigateToDocument,
+    }));
 
     if ("serviceWorker" in navigator && window.isSecureContext) {
       navigator.serviceWorker.register("./service-worker.js").catch(() => {

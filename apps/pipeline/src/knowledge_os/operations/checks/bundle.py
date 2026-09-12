@@ -103,6 +103,7 @@ _SITE_BUNDLE_FILES = {
     "assets/markdown-reader.css",
     "assets/reading-history.js",
     "assets/reading-actions.js",
+        "assets/first-use.js",
     "build-meta.json",
     "data/graph.json",
     "data/search-index.json",
