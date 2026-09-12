@@ -486,6 +486,29 @@ function sourceCard(documentItem) {
     description.append(element("dt", { text: "原件" }), element("dd", { text: "仅本机保存" }));
   }
   const card = element("article", { className: "source-card" }, element("strong", { text: title }), description);
+  const controller = state.localIngest;
+  if (state.data.site.visibility === "private" && controller?.session?.sourcePreview) {
+    const button = element("button", { type: "button", className: "source-preview-trigger", text: "核对本机原文" });
+    const preview = element("div", { className: "source-preview", hidden: true, "aria-live": "polite" });
+    button.addEventListener("click", async () => {
+      if (!preview.hidden) { preview.hidden = true; button.textContent = "核对本机原文"; return; }
+      button.disabled = true;
+      preview.hidden = false;
+      preview.textContent = "正在读取本机原件……";
+      try {
+        const result = await controller.client.readSource(documentItem.id, controller.session);
+        preview.replaceChildren(
+          element("p", { text: `原件解码文本第 ${result.line_start}—${result.line_end} 行${result.truncated ? "（已截断）" : ""}；已核对原件摘要` }),
+          element("pre", { text: result.text }),
+        );
+        button.textContent = "收起原文";
+      } catch (error) {
+        preview.textContent = error.message || "原文暂不可用，请重试";
+        button.textContent = "关闭提示后重试";
+      } finally { button.disabled = false; }
+    });
+    card.append(button, preview);
+  }
   const href = safeHttpUrl(source.origin);
   if (href) {
     const link = element("a", {
@@ -1136,6 +1159,7 @@ async function start() {
     ui.privacyBadge.textContent = privateBuild ? "私密知识库" : "公开知识库";
     document.documentElement.dataset.visibility = data.site.visibility;
     updateConnection();
+    state.localIngest = await localIngest;
     const pendingDocumentId = window.KnowledgeLocalIngest?.peekPendingDocumentId();
     if (pendingDocumentId && state.documents.has(pendingDocumentId)) {
       navigateToDocument(pendingDocumentId);

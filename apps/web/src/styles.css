@@ -1782,3 +1782,7 @@ kbd {
 .first-use button { padding: 10px 16px; border: 1px solid #496a96; border-radius: 9px; background: #edf3fb; color: #213e65; cursor: pointer; font: inherit; }
 .first-use button:focus-visible { outline: 3px solid #5488cd; outline-offset: 3px; }
 @media (max-width: 600px) { .first-use { padding: 16px; } .first-use-actions button { width: 100%; } }
+
+.source-preview-trigger { margin-top: 12px; padding: 8px 12px; border: 1px solid #64868a; border-radius: 8px; background: #edf6f5; color: #294e52; cursor: pointer; font: inherit; }
+.source-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto; font-size: .85rem; line-height: 1.6; }
+.source-preview p { line-height: 1.5; font-size: .8rem; }

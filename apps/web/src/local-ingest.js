@@ -102,6 +102,7 @@
     return {
       token: payload.session_token,
       maximumBytes: capabilities.maximum_file_bytes,
+      sourcePreview: capabilities.source_preview === true,
       acceptedExtensions: [...new Set(acceptedExtensions.map((item) => item.toLocaleLowerCase()))],
       historyLimit: Number.isSafeInteger(capabilities.history_limit)
         ? capabilities.history_limit
@@ -296,6 +297,19 @@
 
     endpoint(path) {
       return new URL(path, this.location.origin).href;
+    }
+
+    async readSource(documentId, session) {
+      const response = await this.fetchImpl(this.endpoint("/__knowledge/source"), {
+        method: "POST", credentials: "same-origin", cache: "no-store",
+        headers: { "Content-Type": "application/json", [SESSION_HEADER]: session.token },
+        body: JSON.stringify({ document_id: documentId }),
+      });
+      const payload = await response.json();
+      if (!response.ok || payload.ok !== true || typeof payload.text !== "string") {
+        throw new LocalIngestError(safeErrorMessage(payload, "原文暂不可用，请重试"));
+      }
+      return payload;
     }
 
     async postJson(path, headers = {}) {

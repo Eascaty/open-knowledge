@@ -14,6 +14,8 @@ from pathlib import Path
 from socketserver import TCPServer
 from typing import Any, BinaryIO, Dict, Mapping, Protocol
 
+from .local_source import SOURCE_PATH, SourcePreviewError, source_preview
+
 from .local_classification import (
     CLASSIFICATION_PATH,
     MAX_CLASSIFICATION_BODY_BYTES,
@@ -367,6 +369,30 @@ class ManagerRequestHandler(SimpleHTTPRequestHandler):
         )
         self._send_json(200 if rebuilt else 202, payload)
 
+    def _receive_source(self) -> None:
+        if not self._browser_authorized():
+            self._reject(403, "forbidden", "本机原文授权无效")
+            return
+        lengths = self.headers.get_all("Content-Length", [])
+        if (self.headers.get("Transfer-Encoding") or self.headers.get("Content-Encoding")
+                or len(lengths) != 1 or not lengths[0].isdigit()
+                or not 0 < int(lengths[0]) <= 1024
+                or self.headers.get("Content-Type", "").split(";", 1)[0].lower() != "application/json"):
+            self._reject(400, "invalid_request", "原文请求格式或大小无效")
+            return
+        try:
+            self.connection.settimeout(5)
+            body = self.rfile.read(int(lengths[0]))
+            if len(body) != int(lengths[0]):
+                raise SourcePreviewError(400, "原文请求不完整")
+            self._send_json(200, source_preview(self.manager.paths.root, body))
+        except SourcePreviewError as exc:
+            self._reject(exc.status, "source_unavailable", str(exc))
+        except socket.timeout:
+            self._reject(408, "request_timeout", "原文请求超时，请重试")
+        except Exception:
+            self._reject(500, "source_unavailable", "暂时无法读取原文，请稍后重试")
+
     def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
         path = urllib.parse.urlsplit(self.path).path
         if path == SESSION_PATH:
@@ -388,6 +414,9 @@ class ManagerRequestHandler(SimpleHTTPRequestHandler):
             return
         if path == CLASSIFICATION_PATH:
             self._receive_classification()
+            return
+        if path == SOURCE_PATH:
+            self._receive_source()
             return
         if path == REVIEW_PATH:
             self._receive_review()

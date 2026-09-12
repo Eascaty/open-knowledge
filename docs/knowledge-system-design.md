@@ -697,3 +697,9 @@ raw_auto_delete: false
 归档记录基线提交、实际文件摘要、版本与权限，固定时间戳以保证相同输入可重复构建；旁置 SHA-256 校验整体归档。用户需要 Python 3.9+ 与浏览器，运行不依赖 Git/Java/Docker；macOS/Linux 通过解包后的独立目录测试，Windows 原生和内置 Python 发行仍为后续事项。此布局不改变 Python wheel 的资源边界，不宣称现有 wheel 已独立可用。
 
 Release 在既有测试和版本门禁之后同时生成本地产品包与 Java 附件。升级先在新目录使用 L03 恢复备份并验证，保留旧目录回退；不原地覆盖运行中的程序与数据。详见 `docs/runbooks/local-install.md`。
+
+### 本机原件核对
+
+私密知识卡在本机浏览器会话声明 `source_preview` 能力时提供原文入口。`POST /__knowledge/source` 只接受知识卡 ID，复用回环绑定、Host/Origin 与独立会话校验，不接受客户端文件路径。服务按只读 SQLite 来源引用定位 raw，拒绝越界和符号链接，读取普通文件后核验 SHA-256；响应禁止缓存，前端仅通过 `textContent` 展示。
+
+首版只支持文本、Markdown 和代码，排除 HTML、PDF、Word 等格式。读取最多2 MiB；按流水线解码、去空字符和首尾空白后的文本定位来源行号，最多显示120行/12000字符并提示截断。摘要变化、原件缺失或定位不一致时拒绝显示。该接口不进入 Java API、canonical 契约、公开构建或静态分享包；原件与数据库均不改写。
