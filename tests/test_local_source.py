@@ -1,9 +1,11 @@
 from __future__ import annotations
 import http.client
+import io
 import json
 import sqlite3
 import tempfile
 import unittest
+import zipfile
 from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
@@ -14,6 +16,43 @@ from knowledge_os.local_source import source_preview, SourcePreviewError, MAX_PR
 from test_local_manager import _running_http_server
 
 class LocalSourceTests(unittest.TestCase):
+    def test_html_and_docx_preview_match_pipeline_without_modifying_sources(self):
+        from knowledge_os.processing.extraction import extract_source
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, 'w') as z:
+            z.writestr('word/document.xml', '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>虚构 Word 来源</w:t></w:r></w:p><w:p><w:r><w:t>核对条件与上下文</w:t></w:r></w:p></w:body></w:document>')
+        samples = {
+            'example.docx': archive.getvalue(),
+            'example.html': '<html><body><h1>虚构网页来源</h1><script>DO_NOT_SHOW</script><p>核对条件与上下文</p></body></html>'.encode(),
+        }
+        for name, data in samples.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as t:
+                paths = ProjectPaths.from_root(Path(t))
+                initialize_layout(paths)
+                original = paths.inbox_dir / 'files' / name
+                original.write_bytes(data)
+                expected = extract_source(original, name)[1]
+                self.assertTrue(run_full_pipeline(paths.root).ok)
+                with closing(sqlite3.connect(paths.database_file)) as c:
+                    doc_id, raw_path = c.execute('SELECT d.id,s.raw_path FROM documents d JOIN sources s ON s.id=d.source_id').fetchone()
+                database = paths.database_file.read_bytes()
+                result = source_preview(paths.root, json.dumps({'document_id': doc_id}).encode())
+                self.assertEqual(result['text'], expected)
+                self.assertEqual(result['locator_basis'], 'extracted-source-text')
+                self.assertNotIn('DO_NOT_SHOW', result['text'])
+                self.assertEqual((paths.root / raw_path).read_bytes(), data)
+                self.assertEqual(paths.database_file.read_bytes(), database)
+
+    def test_invalid_docx_is_reported_without_parser_details(self):
+        with tempfile.TemporaryDirectory() as t:
+            paths, body, _ = self._project(Path(t))
+            with closing(sqlite3.connect(paths.database_file)) as c:
+                c.execute("UPDATE sources SET original_name='broken.docx'")
+                c.commit()
+            with self.assertRaisesRegex(SourcePreviewError, '提取失败') as error:
+                source_preview(paths.root, body)
+            self.assertEqual(error.exception.status, 422)
+
     def _project(self, root, text='# 原件\n\n<script>literal</script>\n\n可核对的原文\n'):
         paths = ProjectPaths.from_root(root)
         initialize_layout(paths)

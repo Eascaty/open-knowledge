@@ -9,7 +9,7 @@ from contextlib import closing
 from pathlib import Path
 
 from .config import ProjectPaths
-from .processing.extraction import TEXT_EXTENSIONS, _decode_text
+from .processing.extraction import TEXT_EXTENSIONS, extract_source_bytes
 
 SOURCE_PATH = '/__knowledge/source'
 MAX_SOURCE_BYTES = 2 * 1024 * 1024
@@ -40,7 +40,8 @@ def source_preview(root: Path, body: bytes) -> dict:
             JOIN sources s ON s.id=d.source_id WHERE d.id=?''', (request['document_id'],)).fetchone()
     if row is None:
         raise SourcePreviewError(404, '这张知识卡已不存在，请刷新页面')
-    if Path(row['original_name']).suffix.lower() not in TEXT_EXTENSIONS - {'.html', '.htm'}:
+    suffix = Path(row['original_name']).suffix.lower()
+    if suffix not in TEXT_EXTENSIONS | {'.docx', '.html', '.htm', ''}:
         raise SourcePreviewError(415, '此格式暂不支持原件预览，请在本机原始资料中核对')
     raw = paths.root / row['raw_path']
     try:
@@ -62,8 +63,12 @@ def source_preview(root: Path, body: bytes) -> dict:
         raise SourcePreviewError(413, '原件超过2 MiB预览上限，请在本机文件中核对')
     if hashlib.sha256(data).hexdigest() != row['sha256']:
         raise SourcePreviewError(409, '原件摘要已改变，未显示可能不匹配的内容')
-    # Match the pipeline's text extraction; locators refer to this decoded text.
-    lines = _decode_text(data).replace('\x00', '').strip().splitlines()
+    # Parse the exact bytes whose hash was checked, using the pipeline extractor.
+    try:
+        _, extracted = extract_source_bytes(data, row['original_name'])
+    except Exception as exc:
+        raise SourcePreviewError(422, '原件文本提取失败，请在本机文件中核对') from exc
+    lines = extracted.splitlines()
     start = row['source_line_start'] or 1
     end = row['source_line_end'] or len(lines)
     if not lines or not 1 <= start <= end <= len(lines):
@@ -76,4 +81,5 @@ def source_preview(root: Path, body: bytes) -> dict:
     return {'ok': True, 'document_id': request['document_id'],
             'original_name': row['original_name'], 'text': text,
             'line_start': start, 'line_end': shown_end,
-            'truncated': truncated, 'locator_basis': 'decoded-source-text'}
+            'truncated': truncated,
+            'locator_basis': 'extracted-source-text' if suffix in {'.docx', '.html', '.htm'} else 'decoded-source-text'}

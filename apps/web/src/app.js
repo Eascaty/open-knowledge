@@ -498,7 +498,7 @@ function sourceCard(documentItem) {
       try {
         const result = await controller.client.readSource(documentItem.id, controller.session);
         preview.replaceChildren(
-          element("p", { text: `原件解码文本第 ${result.line_start}—${result.line_end} 行${result.truncated ? "（已截断）" : ""}；已核对原件摘要` }),
+          element("p", { text: `${result.locator_basis === "extracted-source-text" ? "原件提取文本" : "原件解码文本"}第 ${result.line_start}—${result.line_end} 行${result.truncated ? "（已截断）" : ""}；已核对原件摘要${result.locator_basis === "extracted-source-text" ? "。行号属于提取文本，不代表原文件页码或排版。" : ""}` }),
           element("pre", { text: result.text }),
         );
         button.textContent = "收起原文";
