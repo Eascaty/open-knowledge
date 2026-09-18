@@ -3,12 +3,13 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
 class Element {
-  constructor(tag) { this.tagName = tag; this.children = []; this.events = {}; this.value = ""; }
+  constructor(tag) { this.tagName = tag; this.children = []; this.events = {}; this.value = ""; this.dataset = {}; }
   append(...items) { this.children.push(...items); }
   replaceChildren(...items) { this.children = items; }
   setAttribute(name, value) { this[name] = value; }
   addEventListener(name, callback) { this.events[name] = callback; }
   focus() { this.focused = true; }
+  querySelectorAll(tag) { return this.children.flatMap(child => [...(child.tagName === tag ? [child] : []), ...child.querySelectorAll(tag)]); }
 }
 const context = vm.createContext({ Node: Element, document: { createElement: tag => new Element(tag) } });
 context.window = context;
@@ -59,4 +60,26 @@ const rendered = flatten(context.testUi.searchResults);
 assert.ok(rendered.some(node => node.tagName === "mark" && node.textContent === "Java"));
 assert.ok(rendered.some(node => node.textContent === "<script>alert(1)</script> "));
 assert.equal(rendered.some(node => node.tagName === "script"), false);
-console.log("Web search UI: 6/6 passed");
+context.document.body = {classList:{add(){},remove(){}}};
+context.dispatchEvent = () => {};
+context.Event = class {};
+context.setTimeout = callback => callback();
+vm.runInContext(`
+  ui.searchDialog = document.createElement('section');
+  ui.searchTrigger = document.createElement('button');
+  ui.searchResults.scrollTop = 120;
+  navigateToDocument = id => { globalThis.openedId = id; };
+`, context);
+context.testUi.searchResults.querySelectorAll("button")[0].events.click();
+assert.equal(context.openedId, "a");
+assert.equal(context.testUi.searchInput.value, "");
+assert.equal(context.testState.searchReturn.query, "java");
+context.testState.searchStatus = "deprecated";
+vm.runInContext("restoreSearchContext();", context);
+assert.equal(context.testUi.searchInput.value, "java");
+assert.equal(context.testState.searchStatus, "supported");
+assert.equal(context.testUi.searchResults.scrollTop, 120);
+assert.equal(context.testUi.searchResults.querySelectorAll("button")[0].focused, true);
+vm.runInContext("rememberSearchContext({type:'node',id:'node'}); restoreSearchContext();", context);
+assert.equal(context.testState.searchReturn, null);
+console.log("Web search UI: 8/8 passed");

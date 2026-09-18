@@ -13,6 +13,7 @@ const state = {
   activeDocumentId: null,
   view: "node",
   searchFilter: "all",
+  searchReturn: null,
   searchPath: [],
   searchTag: "",
   searchStatus: "",
@@ -431,6 +432,11 @@ function renderDocumentView(documentId) {
   if (window.KnowledgeReadingActions) {
     view.append(window.KnowledgeReadingActions.render(documentItem, { notify: showToast }));
   }
+  if (state.searchReturn?.documentId === documentItem.id) {
+    const back = element("button", { type: "button", className: "reading-action", text: "返回搜索结果" });
+    back.addEventListener("click", restoreSearchContext);
+    view.append(back);
+  }
   if (documentItem.key_points.length) {
     view.append(
       element(
@@ -787,6 +793,34 @@ function hideSearch() {
   ui.searchTrigger.focus();
 }
 
+function rememberSearchContext(item) {
+  state.searchReturn = item.type === "document" ? {
+    documentId: item.id,
+    query: ui.searchInput.value,
+    filter: state.searchFilter,
+    path: [...state.searchPath],
+    tag: state.searchTag,
+    status: state.searchStatus,
+    scrollTop: ui.searchResults.scrollTop,
+  } : null;
+}
+
+function restoreSearchContext() {
+  const saved = state.searchReturn;
+  if (!saved) return;
+  ui.searchInput.value = saved.query;
+  state.searchFilter = saved.filter;
+  state.searchPath = [...saved.path];
+  state.searchTag = saved.tag;
+  state.searchStatus = saved.status;
+  showSearch();
+  window.setTimeout(() => {
+    const buttons = [...ui.searchResults.querySelectorAll("button")];
+    buttons.find((button) => button.dataset.documentId === saved.documentId)?.focus({ preventScroll: true });
+    ui.searchResults.scrollTop = saved.scrollTop;
+  }, 0);
+}
+
 const SEARCH_FILTERS = window.KnowledgeSearch?.FILTERS || [
   { value: "all", label: "全部" },
   { value: "document", label: "知识卡" },
@@ -904,7 +938,7 @@ function runSearch(value) {
     const snippet = window.KnowledgeSearch.resultSnippet(item, value, state.documents.get(item.id)?.content);
     const button = element(
       "button",
-      { className: "search-result", type: "button" },
+      { className: "search-result", type: "button", dataset: { documentId: item.type === "document" ? item.id : "" } },
       element("span", { className: "result-kind", text: item.type === "document" ? "文" : "类" }),
       element(
         "span",
@@ -916,6 +950,7 @@ function runSearch(value) {
       element("span", { text: "›", "aria-hidden": "true" }),
     );
     button.addEventListener("click", () => {
+      rememberSearchContext(item);
       hideSearch();
       if (item.type === "document") navigateToDocument(item.id);
       else navigateToNode(item.node_id);
