@@ -1800,3 +1800,17 @@ kbd {
 }
 .search-filters { flex-wrap: wrap; }
 .search-card { overflow-y: auto; }
+
+.search-snippet {
+  display: block;
+  margin-top: 6px;
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.search-result mark {
+  color: var(--ink);
+  background: var(--gold-soft);
+  border-radius: 2px;
+}

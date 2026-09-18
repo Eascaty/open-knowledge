@@ -74,6 +74,38 @@
     };
   }
 
+  function highlightParts(text, query) {
+    const value = String(text || "");
+    const tokens = tokenizeQuery(query).sort((a, b) => b.length - a.length);
+    if (!tokens.length) return [{ text: value, matched: false }];
+    const escaped = tokens.map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    const expression = new RegExp(escaped.join("|"), "giu");
+    const parts = [];
+    let end = 0;
+    for (const match of value.matchAll(expression)) {
+      if (match.index > end) parts.push({ text: value.slice(end, match.index), matched: false });
+      parts.push({ text: match[0], matched: true });
+      end = match.index + match[0].length;
+    }
+    if (end < value.length) parts.push({ text: value.slice(end), matched: false });
+    return parts;
+  }
+
+  function resultSnippet(item, query, content = "") {
+    const tokens = tokenizeQuery(query);
+    const candidates = [content, item?.summary, item?.search_text]
+      .filter(Boolean).map((text) => String(text).replace(/\s+/g, " ").trim());
+    const position = (text) => {
+      const normalized = text.toLocaleLowerCase("zh-CN");
+      const matches = tokens.map((token) => normalized.indexOf(token)).filter((index) => index >= 0);
+      return matches.length ? Math.min(...matches) : -1;
+    };
+    const text = candidates.find((candidate) => position(candidate) >= 0) || candidates[0] || "";
+    const start = Math.max(0, position(text) - 40);
+    const end = Math.min(text.length, start + 180);
+    return `${start ? "…" : ""}${text.slice(start, end)}${end < text.length ? "…" : ""}`;
+  }
+
   function search(
     items,
     query,
@@ -106,6 +138,8 @@
     tokenizeQuery,
     scoreSearchItem,
     facetOptions,
+    highlightParts,
+    resultSnippet,
     search,
   });
 })(typeof window !== "undefined" ? window : globalThis);

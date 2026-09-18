@@ -51,4 +51,12 @@ status.value = "supported";
 status.events.change();
 assert.equal(context.testState.searchFilter, "document");
 assert.equal(context.testUi.searchResults.children.length, 1);
-console.log("Web search UI: 5/5 passed");
+context.testState.documents.set("a", {content:"<script>alert(1)</script> Java 安全阅读"});
+context.testUi.searchInput.value = "java";
+vm.runInContext("runSearch(ui.searchInput.value);", context);
+function flatten(node) { return [node, ...node.children.flatMap(flatten)]; }
+const rendered = flatten(context.testUi.searchResults);
+assert.ok(rendered.some(node => node.tagName === "mark" && node.textContent === "Java"));
+assert.ok(rendered.some(node => node.textContent === "<script>alert(1)</script> "));
+assert.equal(rendered.some(node => node.tagName === "script"), false);
+console.log("Web search UI: 6/6 passed");

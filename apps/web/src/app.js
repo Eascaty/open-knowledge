@@ -874,6 +874,14 @@ function renderSearchFilters() {
   ui.searchFilters.append(reset);
 }
 
+function highlightedSearchText(tag, text, query, className = "") {
+  const container = element(tag, { className });
+  for (const part of window.KnowledgeSearch.highlightParts(text, query)) {
+    container.append(element(part.matched ? "mark" : "span", { text: part.text }));
+  }
+  return container;
+}
+
 function runSearch(value) {
   const tokens = window.KnowledgeSearch?.tokenizeQuery(value) || [];
   clear(ui.searchResults);
@@ -893,6 +901,7 @@ function runSearch(value) {
     : `当前范围没有找到匹配内容（${searchFilterLabel()}），可清除筛选或缩短关键词。`;
   for (const result of results) {
     const item = result.item;
+    const snippet = window.KnowledgeSearch.resultSnippet(item, value, state.documents.get(item.id)?.content);
     const button = element(
       "button",
       { className: "search-result", type: "button" },
@@ -900,8 +909,9 @@ function runSearch(value) {
       element(
         "span",
         {},
-        element("strong", { text: item.title }),
+        highlightedSearchText("strong", item.title, value),
         element("small", { text: pathText(item.path) }),
+        highlightedSearchText("span", snippet, value, "search-snippet"),
       ),
       element("span", { text: "›", "aria-hidden": "true" }),
     );

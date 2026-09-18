@@ -59,4 +59,13 @@ assert.strictEqual(search.search(items, "", { status: "supported" })[0].item.id,
 assert.strictEqual(search.search(items, "", { status: "unverified" })[0].item.id, "doc-ai");
 assert.strictEqual(search.search(items, "java", { status: "unverified" }).length, 0);
 assert.strictEqual(search.search(items, "", { filter: "node", status: "supported" }).length, 0);
-console.log("Web search utils: 21 assertions passed");
+const literal = search.highlightParts("C++ <script>Java</script> a.b", "c++ java a.b");
+assert.deepStrictEqual(literal.filter(part => part.matched).map(part => part.text), ["C++", "Java", "a.b"]);
+assert.strictEqual(literal.map(part => part.text).join(""), "C++ <script>Java</script> a.b");
+assert.deepStrictEqual(search.highlightParts("中文全文搜索", "中文 中文全文")[0], {text:"中文全文",matched:true});
+assert.deepStrictEqual(search.highlightParts("Java", ""), [{text:"Java",matched:false}]);
+const longBody = "前文".repeat(200) + "目标线索" + "后文".repeat(200);
+const snippet = search.resultSnippet({summary:"短摘要",search_text:"目标线索"}, "目标线索", longBody);
+assert.ok(snippet.startsWith("…") && snippet.endsWith("…") && snippet.includes("目标线索") && snippet.length <= 182);
+assert.strictEqual(search.resultSnippet({summary:"Java 概述"}, "", ""), "Java 概述");
+console.log("Web search utils: 27 assertions passed");
