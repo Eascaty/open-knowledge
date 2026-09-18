@@ -31,3 +31,5 @@ node --check apps/web/src/first-use.js
 node tests/web/first-use.test.js
 
 node tests/web/local-source.test.js
+
+node tests/web/search-ui.test.js

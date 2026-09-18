@@ -82,6 +82,7 @@ async function testApiAdapterProducesWorkspaceContract() {
   assert.equal(result.data.documents[0].content, "正文");
   assert.equal(result.data.nodes[0].document_count, 1);
   assert.equal(result.search.items.length, 3);
+  assert.equal(result.search.items.find((item) => item.id === "doc").status, "unverified");
   assert.equal(result.graph.tree_edges.length, 1);
 }
 

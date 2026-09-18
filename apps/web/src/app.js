@@ -13,6 +13,9 @@ const state = {
   activeDocumentId: null,
   view: "node",
   searchFilter: "all",
+  searchPath: [],
+  searchTag: "",
+  searchStatus: "",
   graphHitboxes: [],
 };
 
@@ -771,6 +774,7 @@ function showSearch() {
   ui.searchDialog.hidden = false;
   document.body.classList.add("search-open");
   renderSearchFilters();
+  runSearch(ui.searchInput.value);
   window.setTimeout(() => ui.searchInput.focus(), 0);
 }
 
@@ -808,28 +812,85 @@ function renderSearchFilters() {
     );
     button.addEventListener("click", () => {
       state.searchFilter = filter.value;
+      if (filter.value === "node") {
+        state.searchTag = "";
+        state.searchStatus = "";
+      }
       renderSearchFilters();
       runSearch(ui.searchInput.value);
       ui.searchInput.focus();
     });
     ui.searchFilters.append(button);
   }
+  const facets = window.KnowledgeSearch.facetOptions(state.search?.items || []);
+  const facetConfigs = [
+    {
+      label: "专业路径",
+      selected: JSON.stringify(state.searchPath),
+      options: facets.paths.map((path) => [JSON.stringify(path), pathText(path)]),
+      change: (value) => { state.searchPath = JSON.parse(value); },
+    },
+    {
+      label: "标签",
+      selected: state.searchTag,
+      options: facets.tags.map((tag) => [tag, tag]),
+      change: (value) => {
+        state.searchTag = value;
+        if (value && state.searchFilter === "node") state.searchFilter = "document";
+      },
+    },
+    {
+      label: "可信状态",
+      selected: state.searchStatus,
+      options: facets.statuses.map((item) => [item.value, `${item.label}（${item.count}）`]),
+      change: (value) => {
+        state.searchStatus = value;
+        if (value && state.searchFilter === "node") state.searchFilter = "document";
+      },
+    },
+  ];
+  for (const { label, selected, options, change } of facetConfigs) {
+    const select = element("select", { "aria-label": label, className: "search-facet" });
+    select.append(element("option", { value: label === "专业路径" ? "[]" : "", text: `全部${label}` }));
+    for (const [value, text] of options) select.append(element("option", { value, text }));
+    select.value = selected;
+    select.addEventListener("change", () => {
+      change(select.value);
+      renderSearchFilters();
+      runSearch(ui.searchInput.value);
+    });
+    ui.searchFilters.append(select);
+  }
+  const reset = element("button", { type: "button", className: "search-filter", text: "清除筛选" });
+  reset.addEventListener("click", () => {
+    state.searchFilter = "all";
+    state.searchPath = [];
+    state.searchTag = "";
+    state.searchStatus = "";
+    renderSearchFilters();
+    runSearch(ui.searchInput.value);
+    ui.searchInput.focus();
+  });
+  ui.searchFilters.append(reset);
 }
 
 function runSearch(value) {
   const tokens = window.KnowledgeSearch?.tokenizeQuery(value) || [];
   clear(ui.searchResults);
-  if (!tokens.length) {
+  if (!tokens.length && !state.searchPath.length && !state.searchTag && !state.searchStatus) {
     ui.searchHint.textContent = `输入关键词开始搜索；当前范围：${searchFilterLabel()}。`;
     return;
   }
-  const results = window.KnowledgeSearch?.search(state.search.items, value, {
+  const results = window.KnowledgeSearch?.search(state.search?.items || [], value, {
     filter: state.searchFilter,
+    path: state.searchPath,
+    tag: state.searchTag,
+    status: state.searchStatus,
     limit: 30,
   }) || [];
   ui.searchHint.textContent = results.length
-    ? `找到 ${results.length} 条${searchFilterLabel()}结果`
-    : `当前范围没有找到匹配内容（${searchFilterLabel()}）`;
+    ? `显示 ${results.length} 条${searchFilterLabel()}结果（最多显示30条）`
+    : `当前范围没有找到匹配内容（${searchFilterLabel()}），可清除筛选或缩短关键词。`;
   for (const result of results) {
     const item = result.item;
     const button = element(

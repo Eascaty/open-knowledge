@@ -201,6 +201,7 @@
           path: node.path,
           summary: node.summary,
           tags: [],
+          status: "",
           updated_at: "",
           search_text: [...node.path, node.summary].join(" ").toLocaleLowerCase(),
         })),
@@ -212,6 +213,7 @@
           path: item.path,
           summary: item.summary,
           tags: item.tags,
+          status: item.status || "unverified",
           updated_at: item.updated_at,
           search_text: [item.title, item.summary, item.content, ...item.tags, ...item.path]
             .join(" ")

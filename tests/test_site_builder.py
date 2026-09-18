@@ -48,6 +48,7 @@ def sample_data():
                 },
                 "evidence": [],
                 "tags": ["公开"],
+                "status": "supported",
                 "visibility": "public",
                 "section_index": 1,
                 "heading_path": ["公开资料", "第一节"],
@@ -103,6 +104,13 @@ class SiteBuilderTests(unittest.TestCase):
             self.assertEqual(document["source_line_end"], 20)
             self.assertEqual(document["splitter_version"], "markdown-h2-v1")
             self.assertRegex(document["body_sha256"], r"^[0-9a-f]{64}$")
+            search = json.loads(
+                (output / "data" / "search-index.json").read_text(encoding="utf-8")
+            )
+            search_document = next(
+                item for item in search["items"] if item["id"] == "public"
+            )
+            self.assertEqual(search_document["status"], "supported")
 
     def test_private_bundle_keeps_review_metadata(self):
         with tempfile.TemporaryDirectory() as temporary:

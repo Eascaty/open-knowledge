@@ -42,6 +42,7 @@ def _search_payload(data: Mapping[str, Any]) -> dict[str, Any]:
                 "path": node["path"],
                 "summary": node["summary"],
                 "tags": [],
+                "status": "",
                 "updated_at": "",
                 "search_text": " ".join(
                     [*node["path"], node["summary"]]
@@ -67,6 +68,7 @@ def _search_payload(data: Mapping[str, Any]) -> dict[str, Any]:
                 "path": document["path"],
                 "summary": document["summary"],
                 "tags": document["tags"],
+                "status": document.get("status", "unverified"),
                 "updated_at": document["updated_at"],
                 "search_text": " ".join(searchable).casefold(),
             }
