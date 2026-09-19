@@ -68,4 +68,7 @@ const longBody = "前文".repeat(200) + "目标线索" + "后文".repeat(200);
 const snippet = search.resultSnippet({summary:"短摘要",search_text:"目标线索"}, "目标线索", longBody);
 assert.ok(snippet.startsWith("…") && snippet.endsWith("…") && snippet.includes("目标线索") && snippet.length <= 182);
 assert.strictEqual(search.resultSnippet({summary:"Java 概述"}, "", ""), "Java 概述");
-console.log("Web search utils: 27 assertions passed");
+const ranked = search.search(items, "java");
+assert.deepStrictEqual(search.search(items, "java", {offset:1,limit:1}), ranked.slice(1,2));
+assert.deepStrictEqual(search.search(items, "java", {offset:-1}), ranked);
+console.log("Web search utils: 29 assertions passed");

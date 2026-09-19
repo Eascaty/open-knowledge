@@ -1814,3 +1814,5 @@ kbd {
   background: var(--gold-soft);
   border-radius: 2px;
 }
+
+.search-pagination { display: flex; justify-content: center; gap: 12px; padding: 12px; }

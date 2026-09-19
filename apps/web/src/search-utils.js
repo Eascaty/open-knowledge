@@ -109,11 +109,12 @@
   function search(
     items,
     query,
-    { filter = "all", limit = 30, path = [], tag = "", status = "" } = {},
+    { filter = "all", limit = 30, offset = 0, path = [], tag = "", status = "" } = {},
   ) {
     const tokens = tokenizeQuery(query);
     if (!tokens.length && !path.length && !tag && !status) return [];
     const maximum = Number.isSafeInteger(limit) ? Math.max(0, Math.min(100, limit)) : 30;
+    const start = Number.isSafeInteger(offset) ? Math.max(0, offset) : 0;
     return (Array.isArray(items) ? items : [])
       .filter((item) => filter === "all" || item?.type === filter)
       .filter((item) => path.every((part, index) => item?.path?.[index] === part))
@@ -128,7 +129,7 @@
         || String(left.item.title || "").localeCompare(String(right.item.title || ""), "zh-CN")
         || String(left.item.id || "").localeCompare(String(right.item.id || ""))
       ))
-      .slice(0, maximum);
+      .slice(start, start + maximum);
   }
 
   global.KnowledgeSearch = Object.freeze({

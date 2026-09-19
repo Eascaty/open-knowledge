@@ -14,6 +14,7 @@ const state = {
   view: "node",
   searchFilter: "all",
   searchReturn: null,
+  searchPage: 0,
   searchPath: [],
   searchTag: "",
   searchStatus: "",
@@ -802,6 +803,7 @@ function rememberSearchContext(item) {
     tag: state.searchTag,
     status: state.searchStatus,
     scrollTop: ui.searchResults.scrollTop,
+    page: state.searchPage,
   } : null;
 }
 
@@ -814,6 +816,7 @@ function restoreSearchContext() {
   state.searchTag = saved.tag;
   state.searchStatus = saved.status;
   showSearch();
+  runSearch(saved.query, saved.page);
   window.setTimeout(() => {
     const buttons = [...ui.searchResults.querySelectorAll("button")];
     buttons.find((button) => button.dataset.documentId === saved.documentId)?.focus({ preventScroll: true });
@@ -916,7 +919,8 @@ function highlightedSearchText(tag, text, query, className = "") {
   return container;
 }
 
-function runSearch(value) {
+function runSearch(value, page = 0) {
+  state.searchPage = Number.isSafeInteger(page) ? Math.max(0, page) : 0;
   const tokens = window.KnowledgeSearch?.tokenizeQuery(value) || [];
   clear(ui.searchResults);
   if (!tokens.length && !state.searchPath.length && !state.searchTag && !state.searchStatus) {
@@ -928,12 +932,15 @@ function runSearch(value) {
     path: state.searchPath,
     tag: state.searchTag,
     status: state.searchStatus,
-    limit: 30,
+    limit: 31,
+    offset: state.searchPage * 30,
   }) || [];
+  const hasNext = results.length > 30;
+  const visible = results.slice(0, 30);
   ui.searchHint.textContent = results.length
-    ? `显示 ${results.length} 条${searchFilterLabel()}结果（最多显示30条）`
+    ? `显示第 ${state.searchPage * 30 + 1}—${state.searchPage * 30 + visible.length} 条${searchFilterLabel()}结果${hasNext ? "，还有更多结果" : ""}`
     : `当前范围没有找到匹配内容（${searchFilterLabel()}），可清除筛选或缩短关键词。`;
-  for (const result of results) {
+  for (const result of visible) {
     const item = result.item;
     const snippet = window.KnowledgeSearch.resultSnippet(item, value, state.documents.get(item.id)?.content);
     const button = element(
@@ -956,6 +963,23 @@ function runSearch(value) {
       else navigateToNode(item.node_id);
     });
     ui.searchResults.append(element("li", {}, button));
+  }
+  if (state.searchPage > 0 || hasNext) {
+    const navigation = element("li", { className: "search-pagination" });
+    for (const [label, target, enabled] of [
+      ["上一页", state.searchPage - 1, state.searchPage > 0],
+      ["下一页", state.searchPage + 1, hasNext],
+    ]) {
+      if (!enabled) continue;
+      const button = element("button", { type: "button", className: "search-filter", text: label });
+      button.addEventListener("click", () => {
+        runSearch(ui.searchInput.value, target);
+        ui.searchResults.scrollTop = 0;
+        ui.searchResults.querySelectorAll("button")[0]?.focus({ preventScroll: true });
+      });
+      navigation.append(button);
+    }
+    ui.searchResults.append(navigation);
   }
 }
 
