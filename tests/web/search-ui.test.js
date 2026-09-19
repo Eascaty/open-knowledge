@@ -8,8 +8,12 @@ class Element {
   replaceChildren(...items) { this.children = items; }
   setAttribute(name, value) { this[name] = value; }
   addEventListener(name, callback) { this.events[name] = callback; }
-  focus() { this.focused = true; }
-  querySelectorAll(tag) { return this.children.flatMap(child => [...(child.tagName === tag ? [child] : []), ...child.querySelectorAll(tag)]); }
+  focus() { this.focused = true; context.document.activeElement = this; }
+  getAttribute(name) { return this[name]; }
+  click() { this.events.click?.(); }
+  getClientRects() { return [{}]; }
+  get tabIndex() { return 0; }
+  querySelectorAll(tag) { return this.children.flatMap(child => [...((child.tagName === tag || (tag === "button.search-result" && child.tagName === "button" && child.className === "search-result")) ? [child] : []), ...child.querySelectorAll(tag)]); }
 }
 const context = vm.createContext({ Node: Element, document: { createElement: tag => new Element(tag) } });
 context.window = context;
@@ -101,4 +105,32 @@ assert.equal(context.testState.searchPage,2);
 assert.equal(context.testUi.searchResults.querySelectorAll("button").length,6);
 vm.runInContext("runSearch('java');",context);
 assert.equal(context.testState.searchPage,0);
-console.log("Web search UI: 10/10 passed");
+context.testUi.searchDialog.hidden = false;
+buttons = context.testUi.searchResults.querySelectorAll("button.search-result");
+function key(name, target, extra = {}) {
+  const event = {key:name,target,preventDefault(){this.prevented=true;},...extra};
+  context.keyEvent = event;
+  vm.runInContext("handleSearchKeydown(keyEvent);",context);
+  return event;
+}
+key("ArrowDown",context.testUi.searchInput);
+assert.equal(context.document.activeElement,buttons[0]);
+key("ArrowUp",buttons[0]);
+assert.equal(context.document.activeElement,context.testUi.searchInput);
+key("ArrowUp",context.testUi.searchInput);
+assert.equal(context.document.activeElement,buttons[buttons.length-1]);
+assert.equal(key("Enter",context.testUi.searchInput,{isComposing:true}).prevented,undefined);
+assert.equal(key("ArrowDown",context.testUi.searchFilters.children[3]).prevented,undefined);
+const first = context.testUi.searchInput;
+const last = buttons[buttons.length-1];
+context.testUi.searchDialog.querySelectorAll = () => [first,last];
+last.focus();
+assert.equal(key("Tab",last).prevented,true);
+assert.equal(context.document.activeElement,first);
+key("Tab",first,{shiftKey:true});
+assert.equal(context.document.activeElement,last);
+key("Enter",first);
+assert.equal(context.openedId,"card-0");
+assert.equal(context.testUi.searchDialog.hidden,true);
+assert.equal(key("ArrowDown",first).prevented,undefined);
+console.log("Web search UI: 14/14 passed");

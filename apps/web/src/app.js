@@ -782,7 +782,38 @@ function showSearch() {
   document.body.classList.add("search-open");
   renderSearchFilters();
   runSearch(ui.searchInput.value);
-  window.setTimeout(() => ui.searchInput.focus(), 0);
+  window.setTimeout(() => { if (!ui.searchDialog.hidden) ui.searchInput.focus(); }, 0);
+}
+
+function handleSearchKeydown(event) {
+  if (ui.searchDialog.hidden || event.isComposing || event.keyCode === 229) return;
+  if (event.key === "Tab") {
+    const controls = [...ui.searchDialog.querySelectorAll("button, input, select, [tabindex]")]
+      .filter((node) => !node.disabled && node.tabIndex >= 0 && node.getClientRects().length);
+    const first = controls[0];
+    const last = controls[controls.length - 1];
+    if (!first) return;
+    const active = document.activeElement;
+    if (!controls.includes(active) || (event.shiftKey ? active === first : active === last)) {
+      event.preventDefault();
+      (event.shiftKey ? last : first).focus();
+    }
+    return;
+  }
+  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+  const results = [...ui.searchResults.querySelectorAll("button.search-result")];
+  const index = results.indexOf(event.target);
+  if (event.target !== ui.searchInput && index < 0) return;
+  if (!results.length) return;
+  if (event.key === "Enter" && event.target === ui.searchInput) {
+    event.preventDefault();
+    results[0].click();
+  } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    const next = index < 0 ? (event.key === "ArrowDown" ? 0 : results.length - 1)
+      : index + (event.key === "ArrowDown" ? 1 : -1);
+    (results[next] || ui.searchInput).focus();
+  }
 }
 
 function hideSearch() {
@@ -895,6 +926,8 @@ function renderSearchFilters() {
       change(select.value);
       renderSearchFilters();
       runSearch(ui.searchInput.value);
+      [...ui.searchFilters.querySelectorAll("select")]
+        .find((node) => node.getAttribute("aria-label") === label)?.focus();
     });
     ui.searchFilters.append(select);
   }
@@ -1216,6 +1249,7 @@ function bindUi() {
     closer.addEventListener("click", hideSearch);
   }
   ui.searchInput.addEventListener("input", (event) => runSearch(event.target.value));
+  ui.searchDialog.addEventListener("keydown", handleSearchKeydown);
   renderSearchFilters();
   for (const button of ui.mobileTabs) {
     button.addEventListener("click", () => setMobilePanel(button.dataset.panel));
@@ -1231,6 +1265,7 @@ function bindUi() {
     if (window.innerWidth > 1180) document.body.classList.remove("context-open");
   });
   document.addEventListener("keydown", (event) => {
+    if (event.isComposing || event.keyCode === 229) return;
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
       event.preventDefault();
       showSearch();

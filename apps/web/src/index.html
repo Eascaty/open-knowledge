@@ -140,11 +140,12 @@
         </div>
         <div class="search-box">
           <span aria-hidden="true">⌕</span>
-          <input id="search-input" type="search" autocomplete="off" placeholder="输入概念、标题、标签或专业路径">
+          <input id="search-input" type="search" autocomplete="off" placeholder="输入概念、标题、标签或专业路径" aria-describedby="search-keyboard-help">
           <kbd>ESC</kbd>
         </div>
         <nav class="search-filters" id="search-filters" aria-label="搜索范围"></nav>
         <div class="search-hint" id="search-hint" aria-live="polite">输入关键词开始搜索；支持中文连续匹配。</div>
+        <p id="search-keyboard-help" class="search-hint">↑↓ 选择结果 · 回车打开 · Esc 关闭</p>
         <ol class="search-results" id="search-results"></ol>
       </div>
     </section>
