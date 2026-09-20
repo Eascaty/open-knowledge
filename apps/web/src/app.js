@@ -438,6 +438,8 @@ function renderDocumentView(documentId) {
     back.addEventListener("click", restoreSearchContext);
     view.append(back);
   }
+  const reviewReturn = state.reviewQueue?.returnButton(documentItem.id);
+  if (reviewReturn) view.append(reviewReturn);
   if (documentItem.key_points.length) {
     view.append(
       element(
@@ -1309,7 +1311,7 @@ async function start() {
       await window.KnowledgeLocalReview.mount({ notify: showToast });
     }
     if (window.KnowledgeLocalReviewQueue) {
-      window.KnowledgeLocalReviewQueue.mount({
+      state.reviewQueue = window.KnowledgeLocalReviewQueue.mount({
         documents: data.documents,
         notify: showToast,
         openDocument: navigateToDocument,

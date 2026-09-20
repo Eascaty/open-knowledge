@@ -96,6 +96,7 @@ function createUi() {
     summary: new ElementStub("p"),
     filters: new ElementStub("nav"),
     list: new ElementStub("ol"),
+    scroll: new ElementStub("div"),
     empty: new ElementStub("p"),
     more: new ElementStub("button"),
   };
@@ -195,12 +196,43 @@ async function testLargeQueueRendersInBoundedPages() {
   assert.equal(ui.more.hidden, true);
 }
 
+async function testReturnRestoresFilterExpandedListScrollAndFocus() {
+  const { api, windowLike } = loadModule(true);
+  const ui = createUi();
+  const controller = new api.LocalReviewQueueController({
+    documentLike: new DocumentStub(), windowLike, ui,
+    documents: Array.from({length: 65}, (_, i) => documentItem(
+      `doc-${String(i).padStart(2, "0")}`, "supported", "2025-01-01")),
+  });
+  assert.equal(controller.initialize(), true);
+  assert.equal(controller.returnButton("doc-64"), null);
+  controller.setFilter("supported");
+  controller.open();
+  await ui.more.emit("click");
+  ui.scroll.scrollTop = 900;
+  await ui.list.children[64].children[0].emit("click");
+  assert.equal(ui.dialog.hidden,true);
+  assert.equal(controller.returnButton("unrelated"),null);
+  const back = controller.returnButton("doc-64");
+  controller.setFilter("attention");
+  ui.scroll.scrollTop = 0;
+  await back.emit("click");
+  assert.equal(controller.filter,"supported");
+  assert.equal(ui.dialog.hidden,false);
+  assert.equal(ui.list.children.length,65);
+  assert.equal(ui.scroll.scrollTop,900);
+  assert.equal(ui.list.children[64].children[0].focused,true);
+  const fresh = new api.LocalReviewQueueController({documentLike:new DocumentStub(),windowLike,ui:createUi()});
+  assert.equal(fresh.returnButton("doc-64"),null);
+}
+
 Promise.resolve()
   .then(testCountsAndPriorityAreDeterministic)
   .then(testPublicOrUnavailableManagerStaysHidden)
   .then(testLocalQueueFiltersAndOpensKnowledge)
   .then(testLargeQueueRendersInBoundedPages)
-  .then(() => process.stdout.write("Web local review queue: 4/4 passed\n"))
+  .then(testReturnRestoresFilterExpandedListScrollAndFocus)
+  .then(() => process.stdout.write("Web local review queue: 5/5 passed\n"))
   .catch((error) => {
     console.error(error);
     process.exitCode = 1;

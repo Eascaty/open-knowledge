@@ -86,6 +86,8 @@
       this.filter = "attention";
       this.visible = INITIAL_VISIBLE;
       this.lastFocused = null;
+      this.readingContext = null;
+      this.resultButtons = new Map();
     }
 
     queryUi() {
@@ -98,6 +100,7 @@
         summary: this.document.getElementById("review-queue-summary"),
         filters: this.document.getElementById("review-queue-filters"),
         list: this.document.getElementById("review-queue-list"),
+        scroll: this.document.getElementById("review-queue-body"),
         empty: this.document.getElementById("review-queue-empty"),
         more: this.document.getElementById("review-queue-more"),
       };
@@ -125,7 +128,7 @@
       this.document.addEventListener("keydown", (event) => this.handleKeydown(event), true);
     }
 
-    open() {
+    open(restore = false) {
       this.window.dispatchEvent(new Event("knowledge:close-search"));
       this.window.dispatchEvent(new Event("knowledge:close-ingest"));
       this.lastFocused = this.document.activeElement;
@@ -133,9 +136,30 @@
       this.document.body.classList.add("review-queue-open");
       this.render();
       this.window.setTimeout(() => {
+        if (this.ui.dialog.hidden) return;
+        if (restore && this.readingContext) {
+          this.resultButtons.get(this.readingContext.documentId)?.focus({ preventScroll: true });
+          this.ui.scroll.scrollTop = this.readingContext.scrollTop;
+          return;
+        }
         const next = this.ui.dialog.querySelector("button:not([disabled])");
         next?.focus();
       }, 0);
+    }
+
+    returnButton(documentId) {
+      if (this.readingContext?.documentId !== documentId) return null;
+      const button = createElement(this.document, "button", {
+        type: "button", className: "reading-action", text: "返回复核队列",
+      });
+      button.addEventListener("click", () => {
+        const saved = this.readingContext;
+        if (!saved || saved.documentId !== documentId) return;
+        this.filter = saved.filter;
+        this.visible = saved.visible;
+        this.open(true);
+      });
+      return button;
     }
 
     close(restoreFocus = true) {
@@ -218,6 +242,7 @@
 
     renderList() {
       const selected = selectReviewDocuments(this.documents, this.filter);
+      this.resultButtons.clear();
       this.ui.list.replaceChildren();
       this.ui.empty.hidden = selected.length > 0;
       this.ui.empty.textContent = this.filter === "attention"
@@ -249,9 +274,14 @@
           }),
         );
         button.addEventListener("click", () => {
+          this.readingContext = {
+            documentId: documentItem.id, filter: this.filter,
+            visible: this.visible, scrollTop: this.ui.scroll.scrollTop,
+          };
           this.close(false);
           this.openDocument(documentItem.id);
         });
+        this.resultButtons.set(documentItem.id, button);
         const listItem = createElement(this.document, "li");
         listItem.append(button);
         this.ui.list.append(listItem);
