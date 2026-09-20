@@ -1799,7 +1799,9 @@ kbd {
   font: inherit;
 }
 .search-filters { flex-wrap: wrap; }
-.search-card { overflow-y: auto; }
+.search-card { display: flex; flex-direction: column; overflow: hidden; }
+.search-card > :not(.search-results) { flex-shrink: 0; }
+.search-card .search-results { min-height: 0; max-height: none; overflow-y: auto; }
 
 .search-snippet {
   display: block;
