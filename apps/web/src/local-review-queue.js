@@ -88,6 +88,8 @@
       this.lastFocused = null;
       this.readingContext = null;
       this.resultButtons = new Map();
+      this.deferred = new Set();
+      this.filterButtons = new Map();
     }
 
     queryUi() {
@@ -211,6 +213,7 @@
       this.ui.summary.textContent = counts.attention
         ? `${counts.attention} 条需要处理，共 ${counts.total} 条知识`
         : `当前 ${counts.total} 条知识均已完成人工判断`;
+      if (this.deferred.size) this.ui.summary.textContent += `；本次暂缓 ${this.deferred.size} 条（刷新后恢复）`;
       this.renderFilters(counts);
       this.renderList();
     }
@@ -218,11 +221,13 @@
     renderFilters(existingCounts = null) {
       const counts = existingCounts || reviewCounts(this.documents);
       const choices = [
-        { value: "attention", label: "需处理", count: counts.attention },
+        { value: "attention", label: "需处理", count: selectReviewDocuments(this.documents).filter((item) => !this.deferred.has(item.id)).length },
+        { value: "deferred", label: "本次暂缓", count: this.deferred.size },
         ...REVIEW_STATUSES.map((item) => ({ ...item, count: counts[item.value] })),
         { value: "all", label: "全部", count: counts.total },
       ];
       this.ui.filters.replaceChildren();
+      this.filterButtons.clear();
       for (const choice of choices) {
         const button = createElement(
           this.document,
@@ -237,16 +242,19 @@
         );
         button.addEventListener("click", () => this.setFilter(choice.value));
         this.ui.filters.append(button);
+        this.filterButtons.set(choice.value, button);
       }
     }
 
     renderList() {
-      const selected = selectReviewDocuments(this.documents, this.filter);
+      const selected = selectReviewDocuments(this.documents, this.filter === "deferred" ? "all" : this.filter)
+        .filter((item) => this.filter === "deferred" ? this.deferred.has(item.id)
+          : this.filter !== "attention" || !this.deferred.has(item.id));
       this.resultButtons.clear();
       this.ui.list.replaceChildren();
       this.ui.empty.hidden = selected.length > 0;
       this.ui.empty.textContent = this.filter === "attention"
-        ? "很好，目前没有待验证、存在争议或已过时的知识。"
+        ? (this.deferred.size ? "本次队列已清空；暂缓的知识尚未完成复核，可在“本次暂缓”中恢复。" : "很好，目前没有待验证、存在争议或已过时的知识。")
         : "这个状态下暂时没有知识。";
       for (const documentItem of selected.slice(0, this.visible)) {
         const status = statusOption(normalizedStatus(documentItem));
@@ -284,6 +292,21 @@
         this.resultButtons.set(documentItem.id, button);
         const listItem = createElement(this.document, "li");
         listItem.append(button);
+        if (ATTENTION_STATUSES.has(status.value)) {
+          const deferred = this.deferred.has(documentItem.id);
+          const action = createElement(this.document, "button", {
+            type: "button", className: "review-queue-defer",
+            text: deferred ? "恢复本次复核" : "本次暂缓",
+            "aria-label": `${deferred ? "恢复复核" : "本次暂缓"}：${documentItem.title || "未命名知识"}`,
+          });
+          action.addEventListener("click", () => {
+            if (deferred) this.deferred.delete(documentItem.id);
+            else this.deferred.add(documentItem.id);
+            this.render();
+            (this.resultButtons.values().next().value || this.filterButtons.get(this.filter))?.focus();
+          });
+          listItem.append(action);
+        }
         this.ui.list.append(listItem);
       }
       this.ui.more.hidden = selected.length <= this.visible;

@@ -226,13 +226,42 @@ async function testReturnRestoresFilterExpandedListScrollAndFocus() {
   assert.equal(fresh.returnButton("doc-64"),null);
 }
 
+async function testDeferralIsReversibleAndDoesNotChangeReviewState() {
+  const {api,windowLike} = loadModule();
+  const ui=createUi();
+  const documents=[documentItem("todo","unverified","2025-01-01")];
+  const before=JSON.stringify(documents);
+  const controller=new api.LocalReviewQueueController({documentLike:new DocumentStub(),windowLike,ui,documents});
+  controller.initialize();
+  await ui.list.children[0].children[1].emit("click");
+  assert.equal(ui.list.children.length,0);
+  assert.match(ui.empty.textContent,/尚未完成复核/);
+  assert.equal(ui.count.textContent,"1");
+  assert.match(ui.summary.textContent,/刷新后恢复/);
+  controller.setFilter("deferred");
+  assert.equal(ui.list.children.length,1);
+  controller.setFilter("all");
+  assert.equal(ui.list.children.length,1);
+  controller.setFilter("deferred");
+  await ui.list.children[0].children[1].emit("click");
+  assert.equal(ui.list.children.length,0);
+  controller.setFilter("attention");
+  assert.equal(ui.list.children.length,1);
+  assert.equal(JSON.stringify(documents),before);
+  await ui.list.children[0].children[1].emit("click");
+  const fresh=new api.LocalReviewQueueController({documentLike:new DocumentStub(),windowLike,ui:createUi(),documents});
+  fresh.initialize();
+  assert.equal(fresh.ui.list.children.length,1);
+}
+
 Promise.resolve()
   .then(testCountsAndPriorityAreDeterministic)
   .then(testPublicOrUnavailableManagerStaysHidden)
   .then(testLocalQueueFiltersAndOpensKnowledge)
   .then(testLargeQueueRendersInBoundedPages)
   .then(testReturnRestoresFilterExpandedListScrollAndFocus)
-  .then(() => process.stdout.write("Web local review queue: 5/5 passed\n"))
+  .then(testDeferralIsReversibleAndDoesNotChangeReviewState)
+  .then(() => process.stdout.write("Web local review queue: 6/6 passed\n"))
   .catch((error) => {
     console.error(error);
     process.exitCode = 1;
