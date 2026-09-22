@@ -1,0 +1,85 @@
+#!/usr/bin/env node
+"use strict";
+
+// Fixed fictional fixtures only. Never reads a workspace or connects to a service.
+const assert = require("node:assert/strict");
+const { performance } = require("node:perf_hooks");
+const { createHash } = require("node:crypto");
+const { cpus } = require("node:os");
+require("../apps/web/src/search-utils.js");
+require("../apps/web/src/local-review-queue.js");
+const search = globalThis.KnowledgeSearch;
+const queue = globalThis.KnowledgeLocalReviewQueue;
+if (process.argv.length !== 2) {
+  console.error("Usage: node scripts/benchmark-web (JSON on stdout; fixed 1000/10000 cards)");
+  process.exit(2);
+}
+const statuses = ["unverified", "personal", "supported", "verified-by-practice", "contradicted", "deprecated"];
+const priority = [2, 4, 5, 6, 0, 1];
+const id = (i) => `fiction-${String(i).padStart(5, "0")}`;
+const ids = (rows) => rows.map((row) => row.id);
+function fixture(size) {
+  return Array.from({ length: size }, (_, i) => {
+    const title = `虚构卡片 ${id(i)}`;
+    const path = ["虚构专业", `方向${i % 10}`];
+    const tags = [`标签${i % 4}`];
+    const summary = `共同关键词 练习${i % 5}`;
+    return { id: id(i), type: "document", title, path, tags, summary,
+      status: statuses[i % 6], updated_at: "2026-01-01T00:00:00Z",
+      search_text: [title, ...path, ...tags, summary, "这是固定虚构正文。".repeat(100)].join(" ") };
+  });
+}
+function measure(name, run, verify) {
+  verify(run());
+  for (let i = 0; i < 3; i += 1) run();
+  const samples = [];
+  for (let i = 0; i < 20; i += 1) {
+    const start = performance.now();
+    const result = run();
+    samples.push(performance.now() - start);
+    verify(result); // Correctness checks are outside the measured interval.
+  }
+  samples.sort((a, b) => a - b);
+  return { name, p50_ms: +samples[9].toFixed(3), p95_ms: +samples[18].toFixed(3) };
+}
+function benchmark(size) {
+  const documents = fixture(size);
+  const serialized = JSON.stringify(documents);
+  const expected = Array.from({ length: size }, (_, i) => i);
+  const results = [];
+  const searchCase = (name, query, options, indices) => results.push(measure(name,
+    () => search.search(documents, query, options),
+    (rows) => assert.deepEqual(rows.map((row) => row.item.id), indices.map(id))));
+  searchCase("common-first-page", "共同关键词", {}, expected.slice(0, 30));
+  searchCase("common-second-page", "共同关键词", { offset: 30 }, expected.slice(30, 60));
+  searchCase("unique", id(size - 1), {}, [size - 1]);
+  searchCase("separate-keywords", "方向2 练习2", {}, expected.filter((i) => i % 10 === 2).slice(0, 30));
+  searchCase("no-match", "不存在的样本标记", {}, []);
+  searchCase("combined-facets", "", { path: ["虚构专业", "方向2"], tag: "标签2", status: "supported" },
+    expected.filter((i) => i % 10 === 2 && i % 4 === 2 && i % 6 === 2).slice(0, 30));
+  results.push(measure("facet-options", () => search.facetOptions(documents), (facets) => {
+    assert.equal(facets.paths.length, 11);
+    assert.equal(facets.tags.length, 4);
+    assert.deepEqual(facets.statuses.map((item) => item.count), statuses.map((_, index) =>
+      expected.filter((i) => i % 6 === index).length));
+  }));
+  const attention = expected.filter((i) => [0, 4, 5].includes(i % 6));
+  const ordered = [...attention].sort((a, b) => priority[a % 6] - priority[b % 6] || a - b);
+  results.push(measure("review-attention", () => queue.selectReviewDocuments(documents),
+    (rows) => assert.deepEqual(ids(rows), ordered.map(id))));
+  results.push(measure("review-query", () => queue.selectReviewDocuments(documents)
+    .filter((item) => queue.matchesQuery(item, "方向2 练习2")),
+  (rows) => assert.deepEqual(ids(rows), ordered.filter((i) => i % 10 === 2).map(id))));
+  results.push(measure("review-counts", () => queue.reviewCounts(documents), (counts) => {
+    assert.equal(counts.total, size);
+    assert.equal(counts.attention, attention.length);
+    statuses.forEach((status, index) => assert.equal(counts[status], expected.filter((i) => i % 6 === index).length));
+  }));
+  return { cards: size, fixture_bytes: Buffer.byteLength(serialized),
+    fixture_sha256: createHash("sha256").update(serialized).digest("hex"), scenarios: results };
+}
+console.log(JSON.stringify({ schema_version: 1, fixture_version: "fictional-web-v1",
+  scope: "Node logic only; excludes browser rendering, loading, memory and site builds",
+  runtime: { node: process.version, platform: process.platform, arch: process.arch,
+    cpu: cpus()[0]?.model || "unknown" },
+  warmup_runs: 3, measured_runs: 20, datasets: [1000, 10000].map(benchmark) }, null, 2));

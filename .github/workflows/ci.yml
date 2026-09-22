@@ -69,6 +69,15 @@ jobs:
         run: ./scripts/build-demo "${RUNNER_TEMP}/personal-knowledge-os-demo"
       - name: Test Web read and local inbox adapters
         run: ./scripts/test-web
+      - name: Benchmark synthetic Web search and review logic
+        run: node scripts/benchmark-web > "${RUNNER_TEMP}/web-benchmark.json"
+      - name: Upload synthetic Web benchmark
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-benchmark-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/web-benchmark.json
+          retention-days: 7
+          if-no-files-found: error
       - name: Stage public artifact round-trip fixture
         run: |
           artifact_root="${RUNNER_TEMP}/artifact-smoke-source"

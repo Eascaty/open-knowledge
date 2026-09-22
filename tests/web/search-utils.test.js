@@ -71,4 +71,6 @@ assert.strictEqual(search.resultSnippet({summary:"Java 概述"}, "", ""), "Java 
 const ranked = search.search(items, "java");
 assert.deepStrictEqual(search.search(items, "java", {offset:1,limit:1}), ranked.slice(1,2));
 assert.deepStrictEqual(search.search(items, "java", {offset:-1}), ranked);
-console.log("Web search utils: 29 assertions passed");
+assert.strictEqual(search.scoreSearchItem({title: "JAVA", path: ["Java"], tags: ["java"], summary: "Java", search_text: "java"}, ["java"]), 49);
+assert.strictEqual(search.scoreSearchItem(items[0], ["java", "不存在"]), 0);
+console.log("Web search utils: 31 assertions passed");

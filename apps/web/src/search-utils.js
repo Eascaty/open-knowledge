@@ -31,14 +31,15 @@
   }
 
   function scoreSearchItem(item, tokens) {
+    const body = String(item?.search_text || "").toLocaleLowerCase("zh-CN");
+    // Reject non-matches before normalizing four metadata fields for ranking.
+    if (tokens.some((token) => !body.includes(token))) return 0;
     const title = String(item?.title || "").toLocaleLowerCase("zh-CN");
     const path = pathText(item?.path).toLocaleLowerCase("zh-CN");
     const tags = (Array.isArray(item?.tags) ? item.tags : []).join(" ").toLocaleLowerCase("zh-CN");
     const summary = String(item?.summary || "").toLocaleLowerCase("zh-CN");
-    const body = String(item?.search_text || "").toLocaleLowerCase("zh-CN");
     let score = 0;
     for (const token of tokens) {
-      if (!body.includes(token)) return 0;
       if (title === token) score += 30;
       else if (title.includes(token)) score += 12;
       if (path.includes(token)) score += 7;
