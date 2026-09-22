@@ -53,6 +53,13 @@
       .sort(compareDocuments);
   }
 
+  function matchesQuery(item, query) {
+    const tokens = String(query || "").toLocaleLowerCase("zh-CN").trim().split(/\s+/).filter(Boolean);
+    const text = [item.title, item.summary, ...(item.tags || []), ...(item.path || [])]
+      .join(" ").toLocaleLowerCase("zh-CN");
+    return tokens.every((token) => text.includes(token));
+  }
+
   function createElement(documentLike, tag, attributes = {}, ...children) {
     const element = documentLike.createElement(tag);
     for (const [key, value] of Object.entries(attributes)) {
@@ -84,6 +91,7 @@
       this.notify = typeof notify === "function" ? notify : () => {};
       this.ui = ui || null;
       this.filter = "attention";
+      this.query = "";
       this.visible = INITIAL_VISIBLE;
       this.lastFocused = null;
       this.readingContext = null;
@@ -105,6 +113,9 @@
         scroll: this.document.getElementById("review-queue-body"),
         empty: this.document.getElementById("review-queue-empty"),
         more: this.document.getElementById("review-queue-more"),
+        query: this.document.getElementById("review-queue-query"),
+        clearQuery: this.document.getElementById("review-queue-clear-query"),
+        matches: this.document.getElementById("review-queue-matches"),
       };
       return Object.values(this.ui).every(Boolean);
     }
@@ -118,6 +129,12 @@
     }
 
     bind() {
+      this.ui.query.addEventListener("input", () => this.setQuery(this.ui.query.value));
+      this.ui.clearQuery.addEventListener("click", () => {
+        this.ui.query.value = "";
+        this.setQuery("");
+        this.ui.query.focus();
+      });
       this.ui.trigger.addEventListener("click", () => this.open());
       this.ui.more.addEventListener("click", () => {
         this.visible += INITIAL_VISIBLE;
@@ -159,6 +176,8 @@
         if (!saved || saved.documentId !== documentId) return;
         this.filter = saved.filter;
         this.visible = saved.visible;
+        this.query = saved.query;
+        this.ui.query.value = saved.query;
         this.open(true);
       });
       return button;
@@ -172,7 +191,7 @@
     }
 
     handleKeydown(event) {
-      if (this.ui.dialog.hidden) return;
+      if (this.ui.dialog.hidden || event.isComposing || event.keyCode === 229) return;
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -200,6 +219,15 @@
       this.visible = INITIAL_VISIBLE;
       this.renderFilters();
       this.renderList();
+      this.ui.scroll.scrollTop = 0;
+      this.filterButtons.get(filter)?.focus();
+    }
+
+    setQuery(value) {
+      this.query = value;
+      this.visible = INITIAL_VISIBLE;
+      this.renderList();
+      this.ui.scroll.scrollTop = 0;
     }
 
     render() {
@@ -249,13 +277,16 @@
     renderList() {
       const selected = selectReviewDocuments(this.documents, this.filter === "deferred" ? "all" : this.filter)
         .filter((item) => this.filter === "deferred" ? this.deferred.has(item.id)
-          : this.filter !== "attention" || !this.deferred.has(item.id));
+          : this.filter !== "attention" || !this.deferred.has(item.id))
+        .filter((item) => matchesQuery(item, this.query));
+      this.ui.matches.textContent = `当前匹配 ${selected.length} 条；状态标签数字不受关键词影响`;
       this.resultButtons.clear();
       this.ui.list.replaceChildren();
       this.ui.empty.hidden = selected.length > 0;
       this.ui.empty.textContent = this.filter === "attention"
         ? (this.deferred.size ? "本次队列已清空；暂缓的知识尚未完成复核，可在“本次暂缓”中恢复。" : "很好，目前没有待验证、存在争议或已过时的知识。")
         : "这个状态下暂时没有知识。";
+      if (this.query.trim()) this.ui.empty.textContent = "当前范围没有匹配知识，可清除关键词或切换状态。";
       for (const documentItem of selected.slice(0, this.visible)) {
         const status = statusOption(normalizedStatus(documentItem));
         const path = Array.isArray(documentItem.path) ? documentItem.path.join(" / ") : "待归类";
@@ -285,6 +316,7 @@
           this.readingContext = {
             documentId: documentItem.id, filter: this.filter,
             visible: this.visible, scrollTop: this.ui.scroll.scrollTop,
+            query: this.query,
           };
           this.close(false);
           this.openDocument(documentItem.id);
@@ -330,5 +362,6 @@
     mount,
     reviewCounts,
     selectReviewDocuments,
+    matchesQuery,
   });
 })(typeof window !== "undefined" ? window : globalThis);

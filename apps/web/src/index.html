@@ -162,6 +162,14 @@
           <button type="button" class="icon-button" data-close-review-queue aria-label="关闭可信审核队列">×</button>
         </div>
         <nav class="review-queue-filters" id="review-queue-filters" aria-label="按可信状态筛选"></nav>
+        <div class="review-queue-search">
+          <label for="review-queue-query">筛选复核知识</label>
+          <div class="review-queue-search-row">
+            <input id="review-queue-query" type="search" autocomplete="off" placeholder="标题、摘要、标签或专业路径">
+            <button id="review-queue-clear-query" type="button">清除关键词</button>
+          </div>
+          <p id="review-queue-matches" aria-live="polite"></p>
+        </div>
         <div class="review-queue-body" id="review-queue-body">
           <ol class="review-queue-list" id="review-queue-list"></ol>
           <p class="review-queue-empty" id="review-queue-empty" hidden></p>

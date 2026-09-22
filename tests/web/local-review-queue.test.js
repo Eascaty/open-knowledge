@@ -99,6 +99,9 @@ function createUi() {
     scroll: new ElementStub("div"),
     empty: new ElementStub("p"),
     more: new ElementStub("button"),
+    query: new ElementStub("input"),
+    clearQuery: new ElementStub("button"),
+    matches: new ElementStub("p"),
   };
 }
 
@@ -254,6 +257,36 @@ async function testDeferralIsReversibleAndDoesNotChangeReviewState() {
   assert.equal(fresh.ui.list.children.length,1);
 }
 
+async function testQueueQueryCombinesWithDeferralAndReadingReturn() {
+  const {api,windowLike}=loadModule();
+  const ui=createUi();
+  const documents=[{...documentItem("java","unverified","2025-01-01","Java 垃圾回收"),tags:["JVM"]},documentItem("other","supported","2025-01-01","其他")];
+  const controller=new api.LocalReviewQueueController({documentLike:new DocumentStub(),windowLike,ui,documents});
+  controller.initialize(); controller.open();
+  ui.query.value="jAvA JVM"; await ui.query.emit("input");
+  assert.equal(ui.list.children.length,1);
+  assert.match(ui.matches.textContent,/匹配 1 条/);
+  await ui.list.children[0].children[0].emit("click");
+  controller.setQuery("missing");
+  await controller.returnButton("java").emit("click");
+  assert.equal(ui.query.value,"jAvA JVM");
+  assert.equal(ui.list.children.length,1);
+  await ui.list.children[0].children[1].emit("click");
+  assert.equal(ui.list.children.length,0);
+  assert.match(ui.empty.textContent,/清除关键词/);
+  controller.setFilter("deferred");
+  assert.equal(ui.list.children.length,1);
+  controller.setQuery("no-match");
+  await ui.clearQuery.emit("click");
+  assert.equal(controller.filter,"deferred");
+  assert.equal(ui.list.children.length,1);
+  assert.equal(ui.query.focused,true);
+  controller.handleKeydown({key:"Escape",isComposing:true});
+  assert.equal(ui.dialog.hidden,false);
+  assert.equal(api.matchesQuery(documents[0],"技术 回收"),true);
+  assert.equal(api.matchesQuery(documents[0],"java 其他"),false);
+}
+
 Promise.resolve()
   .then(testCountsAndPriorityAreDeterministic)
   .then(testPublicOrUnavailableManagerStaysHidden)
@@ -261,7 +294,8 @@ Promise.resolve()
   .then(testLargeQueueRendersInBoundedPages)
   .then(testReturnRestoresFilterExpandedListScrollAndFocus)
   .then(testDeferralIsReversibleAndDoesNotChangeReviewState)
-  .then(() => process.stdout.write("Web local review queue: 6/6 passed\n"))
+  .then(testQueueQueryCombinesWithDeferralAndReadingReturn)
+  .then(() => process.stdout.write("Web local review queue: 7/7 passed\n"))
   .catch((error) => {
     console.error(error);
     process.exitCode = 1;
