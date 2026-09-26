@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import gzip
 import json
 import os
 import re
@@ -222,6 +223,9 @@ def build_site(
         _write_json(temp / "data" / "taxonomy.json", _taxonomy_payload(data))
         _write_json(temp / "data" / "search-index.json", _search_payload(data))
         _write_json(temp / "data" / "graph.json", _graph_payload(data))
+        for name in ("site-data", "search-index", "graph"):
+            source = temp / "data" / f"{name}.json"
+            source.with_suffix(".json.gz").write_bytes(gzip.compress(source.read_bytes(), mtime=0))
         (temp / "icons" / "icon-192.png").write_bytes(_make_icon(192))
         (temp / "icons" / "icon-512.png").write_bytes(_make_icon(512))
         (temp / "_headers").write_text(
@@ -239,6 +243,7 @@ def build_site(
             temp / "build-meta.json",
             {
                 "schema_version": SCHEMA_VERSION,
+                "data_compression": "gzip-v1",
                 "content_digest": content_digest,
                 "cache_version": cache_version,
                 "generated_at": data["generated_at"],

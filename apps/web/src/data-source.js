@@ -11,6 +11,27 @@
     return response.json();
   }
 
+  async function fetchStaticJson(path) {
+    if (typeof global.DecompressionStream === "function") {
+      try {
+        const response = await fetch(`${path}.gz`, {
+          credentials: "same-origin", cache: "no-store",
+          headers: { Accept: "application/gzip, application/octet-stream" },
+        });
+        if (!response.ok) throw new Error("Compressed data unavailable");
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        // Some hosts apply Content-Encoding and the browser has already decoded it.
+        const stream = new Blob([bytes]).stream();
+        const decoded = bytes[0] === 0x1f && bytes[1] === 0x8b
+          ? stream.pipeThrough(new global.DecompressionStream("gzip")) : stream;
+        return await new Response(decoded).json();
+      } catch (_) {
+        // Old bundles, offline public caches and incompatible hosts retain JSON fallback.
+      }
+    }
+    return fetchJson(path);
+  }
+
   class StaticBundleDataSource {
     constructor(basePath = ".") {
       this.basePath = basePath.replace(/\/$/, "");
@@ -18,9 +39,9 @@
 
     async loadWorkspace() {
       const [data, search, graph] = await Promise.all([
-        fetchJson(`${this.basePath}/data/site-data.json`),
-        fetchJson(`${this.basePath}/data/search-index.json`),
-        fetchJson(`${this.basePath}/data/graph.json`),
+        fetchStaticJson(`${this.basePath}/data/site-data.json`),
+        fetchStaticJson(`${this.basePath}/data/search-index.json`),
+        fetchStaticJson(`${this.basePath}/data/graph.json`),
       ]);
       return { data, search, graph };
     }

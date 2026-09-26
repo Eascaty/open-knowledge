@@ -13,9 +13,11 @@ const { createInterface } = require("node:readline");
 const root = path.resolve(__dirname, "..");
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const chrome = process.argv[2];
-const constrained = process.argv[3] === "--constrained";
-if (!chrome || (process.argv.length !== 3 && !(process.argv.length === 4 && constrained)) || typeof WebSocket === "undefined") {
-  console.error("Usage: node scripts/benchmark-browser /absolute/path/to/chrome [--constrained] (Node 22+)");
+const flags = process.argv.slice(3);
+const constrained = flags.includes("--constrained");
+const uncompressed = flags.includes("--uncompressed");
+if (!chrome || new Set(flags).size !== flags.length || flags.some(flag => !["--constrained", "--uncompressed"].includes(flag)) || typeof WebSocket === "undefined") {
+  console.error("Usage: node scripts/benchmark-browser /absolute/path/to/chrome [--constrained] [--uncompressed] (Node 22+)");
   process.exit(2);
 }
 const profile = constrained
@@ -111,6 +113,11 @@ async function measure(size, base, directory) {
       await cdp.call("Network.emulateNetworkConditions", { offline: false, latency: profile.latency_ms,
         downloadThroughput: profile.download_bytes_per_second, uploadThroughput: profile.upload_bytes_per_second });
     }
+    if (uncompressed) {
+      await cdp.call("Page.addScriptToEvaluateOnNewDocument", {
+        source: "Object.defineProperty(window, 'DecompressionStream', {value: undefined});",
+      });
+    }
     await cdp.call("Page.addScriptToEvaluateOnNewDocument", { source: `
       new MutationObserver((_, observer) => {
         if (document.getElementById('app')?.getAttribute('aria-busy') === 'false') {
@@ -135,7 +142,9 @@ async function measure(size, base, directory) {
         ({name: new URL(r.name).pathname.split('/').pop(), duration_ms:r.duration, transfer_bytes:r.transferSize})) })`);
     assert.equal(opened.failed, false, "Page showed a fatal loading error");
     assert.equal(opened.external_resources, 0, "Unexpected external page resource");
-    assert.ok(opened.resources.some((item) => item.name === "site-data.json"));
+    assert.ok(opened.resources.some((item) => ["site-data.json", "site-data.json.gz"].includes(item.name)));
+    assert.equal(opened.resources.filter(item => item.name.endsWith(".gz")).length, uncompressed ? 0 : 3,
+      "Unexpected compression/fallback behavior");
     const heap = async () => {
       const metrics = await cdp.call("Performance.getMetrics");
       return { js_heap_used_bytes: metrics.metrics.find((item) => item.name === "JSHeapUsedSize").value,
@@ -228,6 +237,7 @@ httpd.serve_forever()
     const datasets = [];
     for (const size of [1000, 10000]) datasets.push(await measure(size, base, path.join(temporary, `chrome-${size}`)));
     console.log(JSON.stringify({ schema_version: 1, fixture_version: "fictional-site-v1", profile,
+      transfer_mode: uncompressed ? "json-fallback" : "gzip",
       runtime: { node: process.version, platform: process.platform, arch: process.arch },
       scope: "Headless Chrome emulation, not a real phone; cold profile and disabled cache; two animation frames after readiness/input; JS heap snapshots without forced GC, not process or peak memory", datasets }, null, 2));
   } finally {

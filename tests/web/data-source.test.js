@@ -86,10 +86,32 @@ async function testApiAdapterProducesWorkspaceContract() {
   assert.equal(result.graph.tree_edges.length, 1);
 }
 
+async function testCompressedStaticData(mode) {
+  const { gzipSync } = require("node:zlib");
+  const requested = [];
+  const context = { URLSearchParams, Blob, Response, DecompressionStream,
+    fetch: async (url, options) => {
+      requested.push(url);
+      assert.equal(options.cache, "no-store");
+      const json = JSON.stringify({ marker: "虚构正文", items: [] });
+      if (!url.endsWith(".gz")) return new Response(json);
+      if (mode === "missing") return new Response("missing", { status: 404 });
+      if (mode === "offline") throw new Error("offline gzip cache miss");
+      if (mode === "broken") return new Response(new Uint8Array([31, 139, 0]));
+      return new Response(mode === "decoded" ? json : gzipSync(json));
+    } };
+  context.window = context;
+  vm.runInNewContext(source, context);
+  const result = await new context.KnowledgeDataSources.StaticBundleDataSource().loadWorkspace();
+  for (const key of ["data", "search", "graph"]) assert.equal(result[key].marker, "虚构正文");
+  assert.equal(requested.length, ["missing", "offline", "broken"].includes(mode) ? 6 : 3);
+}
+
 Promise.resolve()
   .then(testStaticBundleAdapter)
   .then(testApiAdapterProducesWorkspaceContract)
-  .then(() => process.stdout.write("Web data-source adapters: 2/2 passed\n"))
+  .then(async () => { for (const mode of ["gzip", "decoded", "missing", "offline", "broken"]) await testCompressedStaticData(mode); })
+  .then(() => process.stdout.write("Web data-source adapters: 7/7 passed\n"))
   .catch((error) => {
     console.error(error);
     process.exitCode = 1;

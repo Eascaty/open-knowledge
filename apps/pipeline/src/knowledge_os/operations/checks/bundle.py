@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import hashlib
+import gzip
 import json
 import os
 import re
 import shutil
 import sqlite3
 import time
+import zlib
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
 from urllib.parse import unquote, urlsplit
@@ -117,6 +119,7 @@ _SITE_BUNDLE_FILES = {
     "robots.txt",
     "service-worker.js",
 }
+_COMPRESSED_FILES = {f"data/{name}.json.gz" for name in ("site-data", "search-index", "graph")}
 
 
 def check_site_bundle(
@@ -150,7 +153,7 @@ def check_site_bundle(
         if path.is_file() and not is_symlink
     }
     missing = sorted(_SITE_BUNDLE_FILES - actual_files)
-    unexpected = sorted(actual_files - _SITE_BUNDLE_FILES)
+    unexpected = sorted(actual_files - _SITE_BUNDLE_FILES - _COMPRESSED_FILES)
     if missing:
         issues.append("缺少构建文件: {}".format(", ".join(missing)))
     if unexpected:
@@ -167,6 +170,19 @@ def check_site_bundle(
         issues.append("无法读取构建清单: {}: {}".format(type(exc).__name__, str(exc)[:120]))
 
     if isinstance(metadata, dict) and isinstance(site_data, dict):
+        if metadata.get("data_compression") == "gzip-v1":
+            for missing_gzip in sorted(_COMPRESSED_FILES - actual_files):
+                issues.append("缺少压缩副本: " + missing_gzip)
+        for relative in sorted(_COMPRESSED_FILES & actual_files):
+            try:
+                original = (bundle / relative[:-3]).read_bytes()
+                with gzip.open(bundle / relative, "rb") as compressed:
+                    # Bound decompression by the already validated raw companion size.
+                    expanded = compressed.read(len(original) + 1)
+                if expanded != original:
+                    issues.append("压缩副本与 JSON 不一致: " + relative)
+            except (OSError, EOFError, zlib.error) as exc:
+                issues.append("无法校验压缩副本: {}: {}".format(relative, type(exc).__name__))
         if metadata.get("visibility") != expected_visibility:
             issues.append(
                 "build-meta visibility={}，期望 {}".format(

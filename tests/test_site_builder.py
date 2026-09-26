@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import gzip
 import json
 import re
 import shutil
@@ -11,6 +12,7 @@ from unittest import mock
 
 from knowledge_os.site import SiteDataError, build_site
 from knowledge_os.site.build import builder as site_builder_impl
+from knowledge_os.operations.checks import check_site_bundle, CheckStatus
 
 
 def sample_data():
@@ -80,6 +82,32 @@ def sample_data():
 
 
 class SiteBuilderTests(unittest.TestCase):
+    def test_compressed_data_round_trip_and_gate(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "public"
+            build_site(sample_data(), output, visibility="public")
+            for name in ("site-data", "search-index", "graph"):
+                raw = (output / "data" / f"{name}.json").read_bytes()
+                packed = (output / "data" / f"{name}.json.gz").read_bytes()
+                self.assertEqual(gzip.decompress(packed), raw)
+            self.assertEqual(check_site_bundle(output, expected_visibility="public").status, CheckStatus.PASS)
+            compressed = output / "data/site-data.json.gz"
+            compressed.write_bytes(gzip.compress(b"FICTION_PRIVATE_MARKER"))
+            self.assertEqual(check_site_bundle(output, expected_visibility="public").status, CheckStatus.FAIL)
+            compressed.write_bytes(b"\x1f\x8b\x00")
+            self.assertEqual(check_site_bundle(output, expected_visibility="public").status, CheckStatus.FAIL)
+            compressed.unlink()
+            self.assertEqual(check_site_bundle(output, expected_visibility="public").status, CheckStatus.FAIL)
+            compressed.write_bytes(gzip.compress((output / "data/site-data.json").read_bytes() + b"x" * 1000000))
+            self.assertEqual(check_site_bundle(output, expected_visibility="public").status, CheckStatus.FAIL)
+            for path in (output / "data").glob("*.gz"):
+                path.unlink()
+            metadata_path = output / "build-meta.json"
+            metadata = json.loads(metadata_path.read_text())
+            metadata.pop("data_compression")
+            metadata_path.write_text(json.dumps(metadata))
+            self.assertEqual(check_site_bundle(output, expected_visibility="public").status, CheckStatus.PASS)
+
     def test_public_filters_private_and_drops_url_query(self):
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "public"
