@@ -13,10 +13,16 @@ const { createInterface } = require("node:readline");
 const root = path.resolve(__dirname, "..");
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const chrome = process.argv[2];
-if (!chrome || process.argv.length !== 3 || typeof WebSocket === "undefined") {
-  console.error("Usage: node scripts/benchmark-browser /absolute/path/to/chrome (Node 22+)");
+const constrained = process.argv[3] === "--constrained";
+if (!chrome || (process.argv.length !== 3 && !(process.argv.length === 4 && constrained)) || typeof WebSocket === "undefined") {
+  console.error("Usage: node scripts/benchmark-browser /absolute/path/to/chrome [--constrained] (Node 22+)");
   process.exit(2);
 }
+const profile = constrained
+  ? { name: "narrow-constrained", width: 390, height: 844, mobile: true, cpu_rate: 4,
+    download_bytes_per_second: 1250000, upload_bytes_per_second: 250000, latency_ms: 80 }
+  : { name: "desktop", width: 1280, height: 900, mobile: false, cpu_rate: 1,
+    download_bytes_per_second: -1, upload_bytes_per_second: -1, latency_ms: 0 };
 
 async function until(check, timeout = 60000) {
   const deadline = Date.now() + timeout;
@@ -98,7 +104,13 @@ async function measure(size, base, directory) {
     await cdp.call("Network.setCacheDisabled", { cacheDisabled: true });
     await cdp.call("Network.setBypassServiceWorker", { bypass: true });
     await cdp.call("Performance.enable");
-    await cdp.call("Emulation.setDeviceMetricsOverride", { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+    await cdp.call("Emulation.setDeviceMetricsOverride", { width: profile.width, height: profile.height,
+      deviceScaleFactor: 1, mobile: profile.mobile });
+    if (constrained) {
+      await cdp.call("Emulation.setCPUThrottlingRate", { rate: profile.cpu_rate });
+      await cdp.call("Network.emulateNetworkConditions", { offline: false, latency: profile.latency_ms,
+        downloadThroughput: profile.download_bytes_per_second, uploadThroughput: profile.upload_bytes_per_second });
+    }
     await cdp.call("Page.addScriptToEvaluateOnNewDocument", { source: `
       new MutationObserver((_, observer) => {
         if (document.getElementById('app')?.getAttribute('aria-busy') === 'false') {
@@ -109,7 +121,7 @@ async function measure(size, base, directory) {
     ` });
     await cdp.call("Page.navigate", { url: `${base}/${size}/` });
     try {
-      await until(() => cdp.evaluate("window.__benchmarkReady || null"));
+      await until(() => cdp.evaluate("window.__benchmarkReady || null"), constrained ? 180000 : 60000);
     } catch (error) {
       const diagnostic = await cdp.evaluate(`({state:document.readyState,
         busy:document.getElementById('app')?.getAttribute('aria-busy'),
@@ -131,6 +143,7 @@ async function measure(size, base, directory) {
     };
     const afterOpen = await heap();
     const scenarios = [];
+    let layout;
     for (const [query, expected] of [["虚构卡片", 30], [`card-${String(size - 1).padStart(5, "0")}`, 1], ["绝不存在的虚构标记", 0]]) {
       const samples = [];
       for (let i = 0; i < 3; i += 1) {
@@ -149,12 +162,34 @@ async function measure(size, base, directory) {
         if (expected === 1) assert.deepEqual(result.ids, [query]);
         if (expected === 30) assert.deepEqual(result.ids, Array.from({ length: 30 }, (_, n) => `card-${String(n).padStart(5, "0")}`));
         samples.push(+result.elapsed_ms.toFixed(3));
+        if (expected === 30 && i === 0) {
+          layout = await cdp.evaluate(`new Promise(resolve => {
+            const input = document.getElementById('search-input');
+            const close = document.querySelector('button[data-close-search]');
+            const list = document.getElementById('search-results');
+            const top = input.getBoundingClientRect().top;
+            list.scrollTop = list.scrollHeight;
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+              const visible = element => {
+                const r = element.getBoundingClientRect();
+                return r.width > 0 && r.height > 0 && r.left >= 0 && r.top >= 0
+                  && r.right <= innerWidth + 1 && r.bottom <= innerHeight + 1;
+              };
+              resolve({ input_visible:visible(input), close_visible:visible(close),
+                results_visible:visible(list), scrolled:list.scrollTop > 0,
+                input_stayed_fixed:Math.abs(input.getBoundingClientRect().top - top) < 1,
+                no_horizontal_overflow:document.documentElement.scrollWidth <= innerWidth + 1 });
+              list.scrollTop = 0;
+            }));
+          })`);
+          assert.ok(Object.values(layout).every((value) => value === true), JSON.stringify(layout));
+        }
       }
       scenarios.push({ query, samples_ms: samples, median_ms: [...samples].sort((a, b) => a - b)[1] });
     }
     assert.deepEqual(cdp.errors, [], "Uncaught browser exception");
-    return { input_cards: size, chrome: version.product, viewport: { width: 1280, height: 900 },
-      open: opened, after_open: afterOpen, after_search: await heap(), searches: scenarios };
+    return { input_cards: size, chrome: version.product, viewport: { width: profile.width, height: profile.height },
+      open: opened, after_open: afterOpen, after_search: await heap(), searches: scenarios, layout };
   } finally {
     if (cdp) cdp.close();
     await stop(child);
@@ -192,8 +227,9 @@ httpd.serve_forever()
     assert.match(base, /^http:\/\/127\.0\.0\.1:\d+$/);
     const datasets = [];
     for (const size of [1000, 10000]) datasets.push(await measure(size, base, path.join(temporary, `chrome-${size}`)));
-    console.log(JSON.stringify({ schema_version: 1, fixture_version: "fictional-site-v1", runtime: { node: process.version, platform: process.platform, arch: process.arch },
-      scope: "Headless desktop Chrome; cold profile and disabled cache; two animation frames after readiness/input; JS heap snapshots without forced GC, not process or peak memory", datasets }, null, 2));
+    console.log(JSON.stringify({ schema_version: 1, fixture_version: "fictional-site-v1", profile,
+      runtime: { node: process.version, platform: process.platform, arch: process.arch },
+      scope: "Headless Chrome emulation, not a real phone; cold profile and disabled cache; two animation frames after readiness/input; JS heap snapshots without forced GC, not process or peak memory", datasets }, null, 2));
   } finally {
     await stop(server);
     await rm(temporary, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
