@@ -53,6 +53,13 @@
       .sort(compareDocuments);
   }
 
+  function matchesQuery(item, query) {
+    const tokens = String(query || "").toLocaleLowerCase("zh-CN").trim().split(/\s+/).filter(Boolean);
+    const text = [item.title, item.summary, ...(item.tags || []), ...(item.path || [])]
+      .join(" ").toLocaleLowerCase("zh-CN");
+    return tokens.every((token) => text.includes(token));
+  }
+
   function createElement(documentLike, tag, attributes = {}, ...children) {
     const element = documentLike.createElement(tag);
     for (const [key, value] of Object.entries(attributes)) {
@@ -84,8 +91,13 @@
       this.notify = typeof notify === "function" ? notify : () => {};
       this.ui = ui || null;
       this.filter = "attention";
+      this.query = "";
       this.visible = INITIAL_VISIBLE;
       this.lastFocused = null;
+      this.readingContext = null;
+      this.resultButtons = new Map();
+      this.deferred = new Set();
+      this.filterButtons = new Map();
     }
 
     queryUi() {
@@ -98,8 +110,12 @@
         summary: this.document.getElementById("review-queue-summary"),
         filters: this.document.getElementById("review-queue-filters"),
         list: this.document.getElementById("review-queue-list"),
+        scroll: this.document.getElementById("review-queue-body"),
         empty: this.document.getElementById("review-queue-empty"),
         more: this.document.getElementById("review-queue-more"),
+        query: this.document.getElementById("review-queue-query"),
+        clearQuery: this.document.getElementById("review-queue-clear-query"),
+        matches: this.document.getElementById("review-queue-matches"),
       };
       return Object.values(this.ui).every(Boolean);
     }
@@ -113,6 +129,12 @@
     }
 
     bind() {
+      this.ui.query.addEventListener("input", () => this.setQuery(this.ui.query.value));
+      this.ui.clearQuery.addEventListener("click", () => {
+        this.ui.query.value = "";
+        this.setQuery("");
+        this.ui.query.focus();
+      });
       this.ui.trigger.addEventListener("click", () => this.open());
       this.ui.more.addEventListener("click", () => {
         this.visible += INITIAL_VISIBLE;
@@ -125,7 +147,7 @@
       this.document.addEventListener("keydown", (event) => this.handleKeydown(event), true);
     }
 
-    open() {
+    open(restore = false) {
       this.window.dispatchEvent(new Event("knowledge:close-search"));
       this.window.dispatchEvent(new Event("knowledge:close-ingest"));
       this.lastFocused = this.document.activeElement;
@@ -133,9 +155,32 @@
       this.document.body.classList.add("review-queue-open");
       this.render();
       this.window.setTimeout(() => {
+        if (this.ui.dialog.hidden) return;
+        if (restore && this.readingContext) {
+          this.resultButtons.get(this.readingContext.documentId)?.focus({ preventScroll: true });
+          this.ui.scroll.scrollTop = this.readingContext.scrollTop;
+          return;
+        }
         const next = this.ui.dialog.querySelector("button:not([disabled])");
         next?.focus();
       }, 0);
+    }
+
+    returnButton(documentId) {
+      if (this.readingContext?.documentId !== documentId) return null;
+      const button = createElement(this.document, "button", {
+        type: "button", className: "reading-action", text: "返回复核队列",
+      });
+      button.addEventListener("click", () => {
+        const saved = this.readingContext;
+        if (!saved || saved.documentId !== documentId) return;
+        this.filter = saved.filter;
+        this.visible = saved.visible;
+        this.query = saved.query;
+        this.ui.query.value = saved.query;
+        this.open(true);
+      });
+      return button;
     }
 
     close(restoreFocus = true) {
@@ -146,7 +191,7 @@
     }
 
     handleKeydown(event) {
-      if (this.ui.dialog.hidden) return;
+      if (this.ui.dialog.hidden || event.isComposing || event.keyCode === 229) return;
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -174,6 +219,15 @@
       this.visible = INITIAL_VISIBLE;
       this.renderFilters();
       this.renderList();
+      this.ui.scroll.scrollTop = 0;
+      this.filterButtons.get(filter)?.focus();
+    }
+
+    setQuery(value) {
+      this.query = value;
+      this.visible = INITIAL_VISIBLE;
+      this.renderList();
+      this.ui.scroll.scrollTop = 0;
     }
 
     render() {
@@ -187,6 +241,7 @@
       this.ui.summary.textContent = counts.attention
         ? `${counts.attention} 条需要处理，共 ${counts.total} 条知识`
         : `当前 ${counts.total} 条知识均已完成人工判断`;
+      if (this.deferred.size) this.ui.summary.textContent += `；本次暂缓 ${this.deferred.size} 条（刷新后恢复）`;
       this.renderFilters(counts);
       this.renderList();
     }
@@ -194,11 +249,13 @@
     renderFilters(existingCounts = null) {
       const counts = existingCounts || reviewCounts(this.documents);
       const choices = [
-        { value: "attention", label: "需处理", count: counts.attention },
+        { value: "attention", label: "需处理", count: selectReviewDocuments(this.documents).filter((item) => !this.deferred.has(item.id)).length },
+        { value: "deferred", label: "本次暂缓", count: this.deferred.size },
         ...REVIEW_STATUSES.map((item) => ({ ...item, count: counts[item.value] })),
         { value: "all", label: "全部", count: counts.total },
       ];
       this.ui.filters.replaceChildren();
+      this.filterButtons.clear();
       for (const choice of choices) {
         const button = createElement(
           this.document,
@@ -213,16 +270,23 @@
         );
         button.addEventListener("click", () => this.setFilter(choice.value));
         this.ui.filters.append(button);
+        this.filterButtons.set(choice.value, button);
       }
     }
 
     renderList() {
-      const selected = selectReviewDocuments(this.documents, this.filter);
+      const selected = selectReviewDocuments(this.documents, this.filter === "deferred" ? "all" : this.filter)
+        .filter((item) => this.filter === "deferred" ? this.deferred.has(item.id)
+          : this.filter !== "attention" || !this.deferred.has(item.id))
+        .filter((item) => matchesQuery(item, this.query));
+      this.ui.matches.textContent = `当前匹配 ${selected.length} 条；状态标签数字不受关键词影响`;
+      this.resultButtons.clear();
       this.ui.list.replaceChildren();
       this.ui.empty.hidden = selected.length > 0;
       this.ui.empty.textContent = this.filter === "attention"
-        ? "很好，目前没有待验证、存在争议或已过时的知识。"
+        ? (this.deferred.size ? "本次队列已清空；暂缓的知识尚未完成复核，可在“本次暂缓”中恢复。" : "很好，目前没有待验证、存在争议或已过时的知识。")
         : "这个状态下暂时没有知识。";
+      if (this.query.trim()) this.ui.empty.textContent = "当前范围没有匹配知识，可清除关键词或切换状态。";
       for (const documentItem of selected.slice(0, this.visible)) {
         const status = statusOption(normalizedStatus(documentItem));
         const path = Array.isArray(documentItem.path) ? documentItem.path.join(" / ") : "待归类";
@@ -249,11 +313,32 @@
           }),
         );
         button.addEventListener("click", () => {
+          this.readingContext = {
+            documentId: documentItem.id, filter: this.filter,
+            visible: this.visible, scrollTop: this.ui.scroll.scrollTop,
+            query: this.query,
+          };
           this.close(false);
           this.openDocument(documentItem.id);
         });
+        this.resultButtons.set(documentItem.id, button);
         const listItem = createElement(this.document, "li");
         listItem.append(button);
+        if (ATTENTION_STATUSES.has(status.value)) {
+          const deferred = this.deferred.has(documentItem.id);
+          const action = createElement(this.document, "button", {
+            type: "button", className: "review-queue-defer",
+            text: deferred ? "恢复本次复核" : "本次暂缓",
+            "aria-label": `${deferred ? "恢复复核" : "本次暂缓"}：${documentItem.title || "未命名知识"}`,
+          });
+          action.addEventListener("click", () => {
+            if (deferred) this.deferred.delete(documentItem.id);
+            else this.deferred.add(documentItem.id);
+            this.render();
+            (this.resultButtons.values().next().value || this.filterButtons.get(this.filter))?.focus();
+          });
+          listItem.append(action);
+        }
         this.ui.list.append(listItem);
       }
       this.ui.more.hidden = selected.length <= this.visible;
@@ -277,5 +362,6 @@
     mount,
     reviewCounts,
     selectReviewDocuments,
+    matchesQuery,
   });
 })(typeof window !== "undefined" ? window : globalThis);

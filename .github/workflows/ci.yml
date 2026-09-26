@@ -33,6 +33,26 @@ jobs:
       - name: Run test suite
         run: ./scripts/test
 
+  local-package:
+    name: Local Package ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Verify detached local product
+        run: |
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=apps/pipeline/src \
+            python3 -B -m unittest discover -s tests -p test_local_package.py -v
+      - name: Build local product archive
+        run: ./scripts/package-local --output "${RUNNER_TEMP}/knowledge-local-package"
+
   public-demo:
     name: Public Demo
     runs-on: ubuntu-latest
@@ -49,6 +69,42 @@ jobs:
         run: ./scripts/build-demo "${RUNNER_TEMP}/personal-knowledge-os-demo"
       - name: Test Web read and local inbox adapters
         run: ./scripts/test-web
+      - name: Benchmark synthetic Web search and review logic
+        run: node scripts/benchmark-web > "${RUNNER_TEMP}/web-benchmark.json"
+      - name: Benchmark synthetic static site builds
+        run: python3 -B scripts/benchmark-site > "${RUNNER_TEMP}/site-benchmark.json"
+      - name: Benchmark synthetic desktop browser
+        run: node scripts/benchmark-browser "$(command -v google-chrome)" > "${RUNNER_TEMP}/browser-benchmark.json"
+      - name: Benchmark synthetic constrained narrow browser
+        run: node scripts/benchmark-browser "$(command -v google-chrome)" --constrained > "${RUNNER_TEMP}/browser-constrained.json"
+      - name: Upload synthetic Web benchmark
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-benchmark-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/web-benchmark.json
+          retention-days: 7
+          if-no-files-found: error
+      - name: Upload synthetic site benchmark
+        uses: actions/upload-artifact@v7
+        with:
+          name: site-benchmark-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/site-benchmark.json
+          retention-days: 7
+          if-no-files-found: error
+      - name: Upload synthetic browser benchmark
+        uses: actions/upload-artifact@v7
+        with:
+          name: browser-benchmark-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/browser-benchmark.json
+          retention-days: 7
+          if-no-files-found: error
+      - name: Upload synthetic constrained browser benchmark
+        uses: actions/upload-artifact@v7
+        with:
+          name: browser-constrained-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/browser-constrained.json
+          retention-days: 7
+          if-no-files-found: error
       - name: Stage public artifact round-trip fixture
         run: |
           artifact_root="${RUNNER_TEMP}/artifact-smoke-source"

@@ -1,0 +1,248 @@
+#!/usr/bin/env node
+"use strict";
+
+// Requires an installed Chrome and Node 22+. Does not install dependencies.
+const { spawn } = require("node:child_process");
+const { access, mkdtemp, readFile, rm } = require("node:fs/promises");
+const { constants } = require("node:fs");
+const { tmpdir } = require("node:os");
+const path = require("node:path");
+const assert = require("node:assert/strict");
+const { once } = require("node:events");
+const { createInterface } = require("node:readline");
+const root = path.resolve(__dirname, "..");
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const chrome = process.argv[2];
+const flags = process.argv.slice(3);
+const constrained = flags.includes("--constrained");
+const uncompressed = flags.includes("--uncompressed");
+if (!chrome || new Set(flags).size !== flags.length || flags.some(flag => !["--constrained", "--uncompressed"].includes(flag)) || typeof WebSocket === "undefined") {
+  console.error("Usage: node scripts/benchmark-browser /absolute/path/to/chrome [--constrained] [--uncompressed] (Node 22+)");
+  process.exit(2);
+}
+const profile = constrained
+  ? { name: "narrow-constrained", width: 390, height: 844, mobile: true, cpu_rate: 4,
+    download_bytes_per_second: 1250000, upload_bytes_per_second: 250000, latency_ms: 80 }
+  : { name: "desktop", width: 1280, height: 900, mobile: false, cpu_rate: 1,
+    download_bytes_per_second: -1, upload_bytes_per_second: -1, latency_ms: 0 };
+
+async function until(check, timeout = 60000) {
+  const deadline = Date.now() + timeout;
+  do {
+    const value = await check();
+    if (value) return value;
+    await delay(50);
+  } while (Date.now() < deadline);
+  throw new Error("Benchmark readiness timeout");
+}
+
+async function stop(child) {
+  if (!child || !child.pid || child.exitCode !== null || child.signalCode) return;
+  child.kill("SIGTERM");
+  for (let i = 0; i < 40 && child.exitCode === null && !child.signalCode; i += 1) await delay(50);
+  if (child.exitCode === null && !child.signalCode) {
+    child.kill("SIGKILL");
+    await once(child, "exit");
+  }
+}
+
+async function connect(url) {
+  const socket = new WebSocket(url);
+  await once(socket, "open");
+  let sequence = 0;
+  const pending = new Map();
+  const errors = [];
+  const call = (method, params = {}) => new Promise((resolve, reject) => {
+    const id = ++sequence;
+    const timer = setTimeout(() => { pending.delete(id); reject(new Error(`CDP timeout: ${method}`)); }, 60000);
+    pending.set(id, { resolve, reject, timer });
+    socket.send(JSON.stringify({ id, method, params }));
+  });
+  socket.addEventListener("message", ({ data }) => {
+    const message = JSON.parse(data);
+    if (message.method === "Runtime.exceptionThrown") errors.push(message.params.exceptionDetails.text);
+    if (pending.has(message.id)) {
+      const entry = pending.get(message.id);
+      pending.delete(message.id);
+      clearTimeout(entry.timer);
+      if (message.error) entry.reject(new Error(JSON.stringify(message.error)));
+      else entry.resolve(message.result);
+    }
+  });
+  socket.addEventListener("close", () => {
+    for (const entry of pending.values()) { clearTimeout(entry.timer); entry.reject(new Error("CDP closed")); }
+    pending.clear();
+  });
+  const evaluate = async (expression) => {
+    const response = await call("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
+    if (response.exceptionDetails) throw new Error(JSON.stringify(response.exceptionDetails));
+    return response.result.value;
+  };
+  return { call, evaluate, errors, close: () => socket.close() };
+}
+
+async function measure(size, base, directory) {
+  let child;
+  let cdp;
+  let launchError;
+  try {
+    child = spawn(chrome, ["--headless=new", "--no-first-run", "--no-default-browser-check",
+      "--disable-background-networking", "--disable-sync", "--disable-component-update",
+      "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0",
+      `--user-data-dir=${directory}`, "about:blank"], { stdio: "ignore" });
+    child.on("error", (error) => { launchError = error; });
+    const port = await until(async () => {
+      if (launchError) throw launchError;
+      if (child.exitCode !== null) throw new Error("Chrome exited before startup");
+      try { return (await readFile(path.join(directory, "DevToolsActivePort"), "utf8")).split("\n")[0]; }
+      catch (error) { if (error.code !== "ENOENT") throw error; return null; }
+    });
+    const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+    cdp = await connect(targets.find((target) => target.type === "page").webSocketDebuggerUrl);
+    const version = await cdp.call("Browser.getVersion");
+    await cdp.call("Page.enable");
+    await cdp.call("Runtime.enable");
+    await cdp.call("Network.enable");
+    await cdp.call("Network.setCacheDisabled", { cacheDisabled: true });
+    await cdp.call("Network.setBypassServiceWorker", { bypass: true });
+    await cdp.call("Performance.enable");
+    await cdp.call("Emulation.setDeviceMetricsOverride", { width: profile.width, height: profile.height,
+      deviceScaleFactor: 1, mobile: profile.mobile });
+    if (constrained) {
+      await cdp.call("Emulation.setCPUThrottlingRate", { rate: profile.cpu_rate });
+      await cdp.call("Network.emulateNetworkConditions", { offline: false, latency: profile.latency_ms,
+        downloadThroughput: profile.download_bytes_per_second, uploadThroughput: profile.upload_bytes_per_second });
+    }
+    if (uncompressed) {
+      await cdp.call("Page.addScriptToEvaluateOnNewDocument", {
+        source: "Object.defineProperty(window, 'DecompressionStream', {value: undefined});",
+      });
+    }
+    await cdp.call("Page.addScriptToEvaluateOnNewDocument", { source: `
+      new MutationObserver((_, observer) => {
+        if (document.getElementById('app')?.getAttribute('aria-busy') === 'false') {
+          observer.disconnect();
+          requestAnimationFrame(() => requestAnimationFrame(() => { window.__benchmarkReady = performance.now(); }));
+        }
+      }).observe(document, {subtree:true, attributes:true, attributeFilter:['aria-busy']});
+    ` });
+    await cdp.call("Page.navigate", { url: `${base}/${size}/` });
+    try {
+      await until(() => cdp.evaluate("window.__benchmarkReady || null"), constrained ? 180000 : 60000);
+    } catch (error) {
+      const diagnostic = await cdp.evaluate(`({state:document.readyState,
+        busy:document.getElementById('app')?.getAttribute('aria-busy'),
+        failure:document.querySelector('.error-state')?.textContent})`);
+      throw new Error(`${error.message}: ${JSON.stringify(diagnostic)}; ${cdp.errors.join('; ')}`);
+    }
+    const opened = await cdp.evaluate(`({ ready_ms: window.__benchmarkReady,
+      failed: !!document.querySelector('.error-state'),
+      external_resources: performance.getEntriesByType('resource').filter(r => new URL(r.name).origin !== location.origin).length,
+      resources: performance.getEntriesByType('resource').filter(r => r.name.includes('/data/')).map(r =>
+        ({name: new URL(r.name).pathname.split('/').pop(), duration_ms:r.duration, transfer_bytes:r.transferSize})) })`);
+    assert.equal(opened.failed, false, "Page showed a fatal loading error");
+    assert.equal(opened.external_resources, 0, "Unexpected external page resource");
+    assert.ok(opened.resources.some((item) => ["site-data.json", "site-data.json.gz"].includes(item.name)));
+    assert.equal(opened.resources.filter(item => item.name.endsWith(".gz")).length, uncompressed ? 0 : 3,
+      "Unexpected compression/fallback behavior");
+    const heap = async () => {
+      const metrics = await cdp.call("Performance.getMetrics");
+      return { js_heap_used_bytes: metrics.metrics.find((item) => item.name === "JSHeapUsedSize").value,
+        ...await cdp.call("Memory.getDOMCounters") };
+    };
+    const afterOpen = await heap();
+    const scenarios = [];
+    let layout;
+    for (const [query, expected] of [["虚构卡片", 30], [`card-${String(size - 1).padStart(5, "0")}`, 1], ["绝不存在的虚构标记", 0]]) {
+      const samples = [];
+      for (let i = 0; i < 3; i += 1) {
+        const result = await cdp.evaluate(`new Promise(resolve => {
+          document.getElementById('search-trigger').click();
+          const input = document.getElementById('search-input');
+          input.value = ${JSON.stringify(query)};
+          const start = performance.now();
+          input.dispatchEvent(new Event('input', {bubbles:true}));
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve({
+            elapsed_ms: performance.now() - start,
+            ids: [...document.querySelectorAll('button.search-result')].map(b => b.dataset.documentId)
+          })));
+        })`);
+        assert.equal(result.ids.length, expected);
+        if (expected === 1) assert.deepEqual(result.ids, [query]);
+        if (expected === 30) assert.deepEqual(result.ids, Array.from({ length: 30 }, (_, n) => `card-${String(n).padStart(5, "0")}`));
+        samples.push(+result.elapsed_ms.toFixed(3));
+        if (expected === 30 && i === 0) {
+          layout = await cdp.evaluate(`new Promise(resolve => {
+            const input = document.getElementById('search-input');
+            const close = document.querySelector('button[data-close-search]');
+            const list = document.getElementById('search-results');
+            const top = input.getBoundingClientRect().top;
+            list.scrollTop = list.scrollHeight;
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+              const visible = element => {
+                const r = element.getBoundingClientRect();
+                return r.width > 0 && r.height > 0 && r.left >= 0 && r.top >= 0
+                  && r.right <= innerWidth + 1 && r.bottom <= innerHeight + 1;
+              };
+              resolve({ input_visible:visible(input), close_visible:visible(close),
+                results_visible:visible(list), scrolled:list.scrollTop > 0,
+                input_stayed_fixed:Math.abs(input.getBoundingClientRect().top - top) < 1,
+                no_horizontal_overflow:document.documentElement.scrollWidth <= innerWidth + 1 });
+              list.scrollTop = 0;
+            }));
+          })`);
+          assert.ok(Object.values(layout).every((value) => value === true), JSON.stringify(layout));
+        }
+      }
+      scenarios.push({ query, samples_ms: samples, median_ms: [...samples].sort((a, b) => a - b)[1] });
+    }
+    assert.deepEqual(cdp.errors, [], "Uncaught browser exception");
+    return { input_cards: size, chrome: version.product, viewport: { width: profile.width, height: profile.height },
+      open: opened, after_open: afterOpen, after_search: await heap(), searches: scenarios, layout };
+  } finally {
+    if (cdp) cdp.close();
+    await stop(child);
+  }
+}
+
+async function main() {
+  assert.ok(path.isAbsolute(chrome), "Chrome executable must be an absolute path");
+  await access(chrome, constants.X_OK);
+  const temporary = await mkdtemp(path.join(tmpdir(), "knowledge-browser-benchmark-"));
+  let server;
+  try {
+    const python = `
+import http.server, pathlib, runpy, sys
+bench = runpy.run_path(str(pathlib.Path(sys.argv[1]) / 'scripts/benchmark-site'))
+root = pathlib.Path(sys.argv[2])
+for size in (1000, 10000):
+    bench['build_site'](bench['fixture'](size, 'private'), root / str(size))
+class Handler(http.server.SimpleHTTPRequestHandler):
+    def __init__(self, *args, **kwargs): super().__init__(*args, directory=str(root), **kwargs)
+    def log_message(self, *args): pass
+httpd = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+print('http://127.0.0.1:' + str(httpd.server_port), flush=True)
+httpd.serve_forever()
+`;
+    server = spawn("python3", ["-B", "-c", python, root, path.join(temporary, "sites")], { stdio: ["ignore", "pipe", "inherit"] });
+    const lines = createInterface({ input: server.stdout });
+    let startupTimer;
+    let base;
+    try {
+      base = await Promise.race([once(lines, "line").then(([line]) => line),
+        once(server, "exit").then(() => { throw new Error("Fixture server exited"); }),
+        new Promise((_, reject) => { startupTimer = setTimeout(() => reject(new Error("Fixture server startup timeout")), 90000); })]);
+    } finally { clearTimeout(startupTimer); lines.close(); }
+    assert.match(base, /^http:\/\/127\.0\.0\.1:\d+$/);
+    const datasets = [];
+    for (const size of [1000, 10000]) datasets.push(await measure(size, base, path.join(temporary, `chrome-${size}`)));
+    console.log(JSON.stringify({ schema_version: 1, fixture_version: "fictional-site-v1", profile,
+      transfer_mode: uncompressed ? "json-fallback" : "gzip",
+      runtime: { node: process.version, platform: process.platform, arch: process.arch },
+      scope: "Headless Chrome emulation, not a real phone; cold profile and disabled cache; two animation frames after readiness/input; JS heap snapshots without forced GC, not process or peak memory", datasets }, null, 2));
+  } finally {
+    await stop(server);
+    await rm(temporary, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  }
+}
+main().catch((error) => { console.error(error); process.exitCode = 1; });

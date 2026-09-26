@@ -26,3 +26,10 @@ node tests/web/local-review-queue.test.js
 node tests/web/markdown-reader.test.js
 node tests/web/reading-history.test.js
 node tests/web/reading-actions.test.js
+
+node --check apps/web/src/first-use.js
+node tests/web/first-use.test.js
+
+node tests/web/local-source.test.js
+
+node tests/web/search-ui.test.js

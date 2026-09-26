@@ -89,6 +89,8 @@ jobs:
           install -m 0644 "${jar_path}" "release/${artifact}"
           cd release
           sha256sum "${artifact}" > "${artifact}.sha256"
+      - name: Stage complete local product with checksum
+        run: ./scripts/package-local --output release
       - name: Upload verified artifacts
         uses: actions/upload-artifact@v7
         with:
