@@ -73,6 +73,8 @@ jobs:
         run: node scripts/benchmark-web > "${RUNNER_TEMP}/web-benchmark.json"
       - name: Benchmark synthetic static site builds
         run: python3 -B scripts/benchmark-site > "${RUNNER_TEMP}/site-benchmark.json"
+      - name: Benchmark synthetic desktop browser
+        run: node scripts/benchmark-browser "$(command -v google-chrome)" > "${RUNNER_TEMP}/browser-benchmark.json"
       - name: Upload synthetic Web benchmark
         uses: actions/upload-artifact@v7
         with:
@@ -85,6 +87,13 @@ jobs:
         with:
           name: site-benchmark-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/site-benchmark.json
+          retention-days: 7
+          if-no-files-found: error
+      - name: Upload synthetic browser benchmark
+        uses: actions/upload-artifact@v7
+        with:
+          name: browser-benchmark-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/browser-benchmark.json
           retention-days: 7
           if-no-files-found: error
       - name: Stage public artifact round-trip fixture
