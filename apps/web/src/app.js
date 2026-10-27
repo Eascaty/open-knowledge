@@ -431,7 +431,15 @@ function renderDocumentView(documentId) {
     );
   }
   if (window.KnowledgeReadingActions) {
-    view.append(window.KnowledgeReadingActions.render(documentItem, { notify: showToast }));
+    view.append(window.KnowledgeReadingActions.render(documentItem, {
+      notify: showToast, favorites: state.favorites,
+      onFavoritesChanged: () => renderDocumentContext(documentItem),
+      onShowFavorites: () => {
+        document.body.classList.add("context-open");
+        setMobilePanel("context");
+        document.getElementById("favorites-section")?.scrollIntoView({ block: "start" });
+      },
+    }));
   }
   if (state.searchReturn?.documentId === documentItem.id) {
     const back = element("button", { type: "button", className: "reading-action", text: "返回搜索结果" });
@@ -606,8 +614,52 @@ function recentDocumentCard(entry) {
   return card;
 }
 
+function renderFavorites() {
+  if (!state.favorites) return;
+  const { items, error } = state.favorites.snapshot();
+  const exportButton = element("button", { type: "button", className: "context-clear", text: "导出清单" });
+  exportButton.disabled = Boolean(error) || items.length === 0;
+  exportButton.addEventListener("click", () => {
+    try {
+      const blob = new Blob([JSON.stringify(state.favorites.exportData(), null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = element("a", { href: url, download: "knowledge-favorites.json" });
+      document.body.append(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showToast("已导出收藏编号和时间，不含正文");
+    } catch { showToast("收藏清单导出失败，请检查浏览器存储"); }
+  });
+  const section = contextSection("我的收藏", items.length, exportButton);
+  section.id = "favorites-section";
+  section.append(element("p", { className: "favorites-hint", text: error || "仅保存在此浏览器。清理浏览器数据会丢失收藏；导出清单不含正文。" }));
+  for (const entry of items) {
+    const documentItem = state.documents.get(entry.id);
+    const card = element("button", { type: "button", className: "relation-card",
+      text: documentItem?.title || "暂不可见的收藏（记录已保留）" });
+    card.disabled = !documentItem;
+    card.addEventListener("click", () => { navigateToDocument(entry.id); setMobilePanel("content"); });
+    section.append(card);
+    if (!documentItem) {
+      const remove = element("button", { type: "button", className: "context-clear", text: "取消此收藏" });
+      remove.addEventListener("click", () => {
+        const result = state.favorites.set(entry.id, false);
+        showToast(result.message);
+        if (result.ok) {
+          const active = state.documents.get(state.activeDocumentId);
+          if (active) renderDocumentContext(active);
+          else renderNodeContext(state.nodes.get(state.activeNodeId));
+        }
+      });
+      section.append(remove);
+    }
+  }
+  if (!error && !items.length) section.append(element("p", { text: "打开知识卡后可添加收藏。" }));
+  ui.contextView.append(section);
+}
+
 function renderDocumentContext(documentItem) {
   clear(ui.contextView);
+  renderFavorites();
   const recentEntries = window.KnowledgeReadingHistory?.recentEntries(
     state.documents,
     { limit: 6 },
@@ -689,6 +741,7 @@ function renderDocumentContext(documentItem) {
 
 function renderNodeContext(node) {
   clear(ui.contextView);
+  renderFavorites();
   const relations = relationsForNode(node.id);
   if (relations.length) {
     const section = contextSection("节点辅助关系", relations.length);
@@ -1303,6 +1356,9 @@ async function start() {
     state.data = data;
     state.search = search;
     state.graph = graph;
+    state.favorites = window.KnowledgeFavorites?.createStore({ scope: JSON.stringify([
+      location.pathname.replace(/index\.html$/, ""), data.root, data.site.visibility,
+    ]) });
     setupIndexes();
     if (window.KnowledgeLocalClassification) {
       await window.KnowledgeLocalClassification.mount({ notify: showToast });

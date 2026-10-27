@@ -48,8 +48,32 @@ async function testClipboardFallbackIsBounded() {
   assert.equal(await api.copyText("no document", { navigatorLike: {}, documentLike: {} }), false);
 }
 
+async function testFavoriteButtonTracksSuccessfulWritesOnly() {
+  let selected = false;
+  let fail = false;
+  let changed = 0;
+  const notices = [];
+  const favorites = { has: () => selected, set: (_id, next) => {
+    if (fail) return {ok:false,message:"存储失败"};
+    selected = next; return {ok:true,message:"已保存"};
+  } };
+  const toolbar = api.render({id:"card",title:"卡片"}, {documentLike,favorites,
+    notify: text => notices.push(text), onFavoritesChanged: () => changed++});
+  const toggle = toolbar.all("button")[2];
+  assert.equal(toggle.attributes["aria-pressed"], "false");
+  toggle.click();
+  assert.equal(toggle.attributes["aria-pressed"], "true");
+  fail = true; toggle.click();
+  assert.equal(toggle.attributes["aria-pressed"], "true");
+  assert.equal(changed, 1);
+  assert.equal(notices.at(-1), "存储失败");
+  fail = false; toggle.click();
+  assert.equal(toggle.attributes["aria-pressed"], "false");
+}
+
 (async () => {
   await testCopiesLinkAndBodyWithoutExposingSource();
   await testClipboardFallbackIsBounded();
-  process.stdout.write("Web reading actions: 2/2 passed\n");
+  await testFavoriteButtonTracksSuccessfulWritesOnly();
+  process.stdout.write("Web reading actions: 3/3 passed\n");
 })();

@@ -686,6 +686,17 @@ kbd {
   margin: 18px 0 2px;
 }
 
+.favorites-hint {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.reading-action[aria-pressed="true"] {
+  border-color: var(--teal);
+  font-weight: 700;
+}
+
 .reading-action,
 .context-clear {
   padding: 7px 10px;

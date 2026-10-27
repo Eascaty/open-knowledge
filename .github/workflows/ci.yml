@@ -79,6 +79,8 @@ jobs:
         run: node scripts/benchmark-browser "$(command -v google-chrome)" --constrained > "${RUNNER_TEMP}/browser-constrained.json"
       - name: Verify public offline fallback and private cache boundary
         run: node scripts/benchmark-browser "$(command -v google-chrome)" --offline-check > "${RUNNER_TEMP}/browser-offline.json"
+      - name: Verify favorites persistence and export
+        run: node scripts/benchmark-browser "$(command -v google-chrome)" --favorites-check > "${RUNNER_TEMP}/browser-favorites.json"
       - name: Upload synthetic Web benchmark
         uses: actions/upload-artifact@v7
         with:
@@ -112,6 +114,13 @@ jobs:
         with:
           name: browser-offline-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/browser-offline.json
+          retention-days: 7
+          if-no-files-found: error
+      - name: Upload synthetic favorites browser check
+        uses: actions/upload-artifact@v7
+        with:
+          name: browser-favorites-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/browser-favorites.json
           retention-days: 7
           if-no-files-found: error
       - name: Stage public artifact round-trip fixture

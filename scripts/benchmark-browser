@@ -3,7 +3,7 @@
 
 // Requires an installed Chrome and Node 22+. Does not install dependencies.
 const { spawn } = require("node:child_process");
-const { access, mkdtemp, readFile, writeFile, rm } = require("node:fs/promises");
+const { access, mkdir, mkdtemp, readFile, writeFile, rm } = require("node:fs/promises");
 const { constants } = require("node:fs");
 const { tmpdir } = require("node:os");
 const path = require("node:path");
@@ -17,8 +17,9 @@ const flags = process.argv.slice(3);
 const constrained = flags.includes("--constrained");
 const uncompressed = flags.includes("--uncompressed");
 const offlineCheck = flags.includes("--offline-check");
-if (!chrome || new Set(flags).size !== flags.length || flags.some(flag => !["--constrained", "--uncompressed", "--offline-check"].includes(flag)) || (offlineCheck && flags.length !== 1) || typeof WebSocket === "undefined") {
-  console.error("Usage: node scripts/benchmark-browser /absolute/path/to/chrome [--constrained] [--uncompressed] OR --offline-check (Node 22+)");
+const favoritesCheck = flags.includes("--favorites-check");
+if (!chrome || new Set(flags).size !== flags.length || flags.some(flag => !["--constrained", "--uncompressed", "--offline-check", "--favorites-check"].includes(flag)) || ((offlineCheck || favoritesCheck) && flags.length !== 1) || typeof WebSocket === "undefined") {
+  console.error("Usage: node scripts/benchmark-browser /absolute/path/to/chrome [--constrained] [--uncompressed] OR --offline-check OR --favorites-check (Node 22+)");
   process.exit(2);
 }
 const profile = constrained
@@ -139,6 +140,49 @@ async function verifyOffline(cdp, visibility, marker) {
     cached_paths_before: before, cached_paths_after: after, offline_error_expected: failed, search_ids: ids };
 }
 
+async function verifyFavorites(cdp, directory, visibility) {
+  await cdp.evaluate(`(() => {
+    document.getElementById('search-trigger').click();
+    const input = document.getElementById('search-input'); input.value = 'card-00001';
+    input.dispatchEvent(new Event('input', {bubbles:true}));
+    document.querySelector('button.search-result').click();
+    document.querySelector('.reading-actions button[aria-pressed]').click();
+  })()`);
+  const selected = () => cdp.evaluate("document.querySelector('.reading-actions button[aria-pressed]')?.getAttribute('aria-pressed')");
+  assert.equal(await selected(), "true");
+  await cdp.evaluate("window.__benchmarkReady = 0");
+  await cdp.call("Page.reload");
+  await until(() => cdp.evaluate("window.__benchmarkReady || null"));
+  assert.equal(await selected(), "true", "Favorite did not survive refresh");
+  await cdp.call("Emulation.setDeviceMetricsOverride", {width:390,height:844,deviceScaleFactor:1,mobile:true});
+  await cdp.evaluate("[...document.querySelectorAll('.reading-actions button')].find(b => b.textContent === '查看收藏').click()");
+  assert.equal(await cdp.evaluate("document.body.dataset.mobilePanel"), "context");
+  assert.ok(await cdp.evaluate("(() => { const r = document.getElementById('favorites-section').getBoundingClientRect(); return r.width > 0 && r.left >= 0 && r.right <= innerWidth + 1; })()"));
+  assert.ok(await cdp.evaluate("document.getElementById('favorites-section').textContent.includes('虚构卡片 00001')"));
+  const downloads = path.join(directory, "test-exports");
+  await mkdir(downloads);
+  await cdp.call("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: downloads });
+  await cdp.evaluate("[...document.querySelectorAll('#favorites-section button')].find(b => b.textContent === '导出清单').click()");
+  const exported = await until(async () => {
+    try { return JSON.parse(await readFile(path.join(downloads, "knowledge-favorites.json"), "utf8")); }
+    catch (error) { if (error.code !== "ENOENT") throw error; return null; }
+  });
+  assert.deepEqual(Object.keys(exported).sort(), ["format", "items", "version"]);
+  assert.equal(exported.format, "knowledge-favorites");
+  assert.equal(exported.items.length, 1);
+  assert.equal(exported.items[0].id, "card-00001");
+  assert.deepEqual(Object.keys(exported.items[0]).sort(), ["id", "savedAt"]);
+  assert.ok(Number.isSafeInteger(exported.items[0].savedAt));
+  await cdp.evaluate("document.querySelector('[data-panel=content]').click(); document.querySelector('.reading-actions button[aria-pressed]').click()");
+  await cdp.evaluate("window.__benchmarkReady = 0");
+  await cdp.call("Page.reload");
+  await until(() => cdp.evaluate("window.__benchmarkReady || null"));
+  assert.equal(await selected(), "false", "Cancelled favorite returned after refresh");
+  assert.deepEqual(cdp.errors, []);
+  return { visibility, saved_after_refresh: true, cancelled_after_refresh: true,
+    narrow_favorites_access: true, downloaded_reference_only_export: true };
+}
+
 async function measure(size, base, directory, visibility = "private", marker = "") {
   let child;
   let cdp;
@@ -204,6 +248,7 @@ async function measure(size, base, directory, visibility = "private", marker = "
     assert.equal(opened.resources.filter(item => item.name.endsWith(".gz")).length, uncompressed ? 0 : 3,
       "Unexpected compression/fallback behavior");
     if (offlineCheck) return { chrome: version.product, ...await verifyOffline(cdp, visibility, marker) };
+    if (favoritesCheck) return { chrome: version.product, ...await verifyFavorites(cdp, directory, visibility) };
     const heap = async () => {
       const metrics = await cdp.call("Performance.getMetrics");
       return { js_heap_used_bytes: metrics.metrics.find((item) => item.name === "JSHeapUsedSize").value,
@@ -299,7 +344,7 @@ httpd = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
 print('http://127.0.0.1:' + str(httpd.server_port), flush=True)
 httpd.serve_forever()
 `;
-    server = spawn("python3", ["-B", "-c", python, root, path.join(temporary, "sites"), offlineCheck ? "offline" : "benchmark"], { stdio: ["ignore", "pipe", "inherit"] });
+    server = spawn("python3", ["-B", "-c", python, root, path.join(temporary, "sites"), (offlineCheck || favoritesCheck) ? "offline" : "benchmark"], { stdio: ["ignore", "pipe", "inherit"] });
     const lines = createInterface({ input: server.stdout });
     let startupTimer;
     let base;
@@ -310,7 +355,7 @@ httpd.serve_forever()
     } finally { clearTimeout(startupTimer); lines.close(); }
     assert.match(base, /^http:\/\/127\.0\.0\.1:\d+$/);
     const datasets = [];
-    if (offlineCheck) {
+    if (offlineCheck || favoritesCheck) {
       for (const visibility of ["private", "public"]) datasets.push(await measure(20, `${base}/${visibility}`,
         path.join(temporary, `chrome-${visibility}`), visibility, path.join(temporary, "sites", `offline-${visibility}`)));
     } else {
@@ -318,9 +363,10 @@ httpd.serve_forever()
     }
     console.log(JSON.stringify({ schema_version: 1, fixture_version: "fictional-site-v1", profile,
       transfer_mode: uncompressed ? "json-fallback" : "gzip",
-      mode: offlineCheck ? "service-worker-offline-check" : "performance",
+      mode: favoritesCheck ? "favorites-check" : offlineCheck ? "service-worker-offline-check" : "performance",
       runtime: { node: process.version, platform: process.platform, arch: process.arch },
-      scope: offlineCheck ? "Real Service Worker with HTTP cache disabled; fixture server connections severed; synthetic data only; no performance measurement"
+      scope: favoritesCheck ? "Synthetic favorites: save, reload, export and cancel; isolated browser storage"
+        : offlineCheck ? "Real Service Worker with HTTP cache disabled; fixture server connections severed; synthetic data only; no performance measurement"
         : "Headless Chrome emulation, not a real phone; cold profile and disabled cache; two animation frames after readiness/input; JS heap snapshots without forced GC, not process or peak memory", datasets }, null, 2));
   } finally {
     await stop(server);

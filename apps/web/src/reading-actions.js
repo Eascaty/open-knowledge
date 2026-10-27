@@ -46,6 +46,9 @@
     navigatorLike = global.navigator,
     locationLike = global.location,
     notify = () => {},
+    favorites = null,
+    onFavoritesChanged = () => {},
+    onShowFavorites = null,
   } = {}) {
     const toolbar = documentLike.createElement("div");
     toolbar.className = "reading-actions";
@@ -60,6 +63,21 @@
           ? "知识正文已复制" : "复制暂时不可用，请稍后重试");
       }),
     );
+    if (favorites && documentItem.id) {
+      const favorite = button(documentLike, "", () => {
+        const result = favorites.set(documentItem.id, !favorites.has(documentItem.id));
+        notify(result.message);
+        if (result.ok) { update(); onFavoritesChanged(); }
+      });
+      const update = () => {
+        const selected = favorites.has(documentItem.id);
+        favorite.textContent = selected ? "取消收藏" : "收藏卡片";
+        favorite.setAttribute("aria-pressed", String(selected));
+      };
+      update();
+      toolbar.append(favorite);
+      if (onShowFavorites) toolbar.append(button(documentLike, "查看收藏", onShowFavorites));
+    }
     return toolbar;
   }
 
