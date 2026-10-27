@@ -102,6 +102,7 @@
     return {
       token: payload.session_token,
       maximumBytes: capabilities.maximum_file_bytes,
+      sourcePreview: capabilities.source_preview === true,
       acceptedExtensions: [...new Set(acceptedExtensions.map((item) => item.toLocaleLowerCase()))],
       historyLimit: Number.isSafeInteger(capabilities.history_limit)
         ? capabilities.history_limit
@@ -296,6 +297,19 @@
 
     endpoint(path) {
       return new URL(path, this.location.origin).href;
+    }
+
+    async readSource(documentId, session) {
+      const response = await this.fetchImpl(this.endpoint("/__knowledge/source"), {
+        method: "POST", credentials: "same-origin", cache: "no-store",
+        headers: { "Content-Type": "application/json", [SESSION_HEADER]: session.token },
+        body: JSON.stringify({ document_id: documentId }),
+      });
+      const payload = await response.json();
+      if (!response.ok || payload.ok !== true || typeof payload.text !== "string") {
+        throw new LocalIngestError(safeErrorMessage(payload, "原文暂不可用，请重试"));
+      }
+      return payload;
     }
 
     async postJson(path, headers = {}) {
@@ -553,6 +567,21 @@
       this.document.body.classList.add("ingest-open");
       this.window.setTimeout(() => this.ui.dropzone.focus(), 0);
       void this.refreshStatus(true);
+    }
+
+    previewNote(note) {
+      if (!this.session || !this.ui || this.ui.paste.hidden) return false;
+      this.openDialog();
+      this.ui.paste.open = true;
+      if (this.ui.pasteTitle.value.trim() || this.ui.pasteContent.value.trim()) {
+        this.notify("已有未提交的文字，请先处理当前草稿；示例未覆盖它");
+        return false;
+      }
+      this.ui.pasteTitle.value = note.title;
+      this.ui.pasteContent.value = note.content;
+      this.updatePasteState();
+      this.window.setTimeout(() => this.ui.pasteContent.focus(), 0);
+      return true;
     }
 
     closeDialog(restoreFocus = true) {

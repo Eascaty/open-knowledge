@@ -13,6 +13,11 @@ const state = {
   activeDocumentId: null,
   view: "node",
   searchFilter: "all",
+  searchReturn: null,
+  searchPage: 0,
+  searchPath: [],
+  searchTag: "",
+  searchStatus: "",
   graphHitboxes: [],
 };
 
@@ -426,8 +431,23 @@ function renderDocumentView(documentId) {
     );
   }
   if (window.KnowledgeReadingActions) {
-    view.append(window.KnowledgeReadingActions.render(documentItem, { notify: showToast }));
+    view.append(window.KnowledgeReadingActions.render(documentItem, {
+      notify: showToast, favorites: state.favorites,
+      onFavoritesChanged: () => renderDocumentContext(documentItem),
+      onShowFavorites: () => {
+        document.body.classList.add("context-open");
+        setMobilePanel("context");
+        document.getElementById("favorites-section")?.scrollIntoView({ block: "start" });
+      },
+    }));
   }
+  if (state.searchReturn?.documentId === documentItem.id) {
+    const back = element("button", { type: "button", className: "reading-action", text: "返回搜索结果" });
+    back.addEventListener("click", restoreSearchContext);
+    view.append(back);
+  }
+  const reviewReturn = state.reviewQueue?.returnButton(documentItem.id);
+  if (reviewReturn) view.append(reviewReturn);
   if (documentItem.key_points.length) {
     view.append(
       element(
@@ -486,6 +506,29 @@ function sourceCard(documentItem) {
     description.append(element("dt", { text: "原件" }), element("dd", { text: "仅本机保存" }));
   }
   const card = element("article", { className: "source-card" }, element("strong", { text: title }), description);
+  const controller = state.localIngest;
+  if (state.data.site.visibility === "private" && controller?.session?.sourcePreview) {
+    const button = element("button", { type: "button", className: "source-preview-trigger", text: "核对本机原文" });
+    const preview = element("div", { className: "source-preview", hidden: true, "aria-live": "polite" });
+    button.addEventListener("click", async () => {
+      if (!preview.hidden) { preview.hidden = true; button.textContent = "核对本机原文"; return; }
+      button.disabled = true;
+      preview.hidden = false;
+      preview.textContent = "正在读取本机原件……";
+      try {
+        const result = await controller.client.readSource(documentItem.id, controller.session);
+        preview.replaceChildren(
+          element("p", { text: `${result.locator_basis === "extracted-source-text" ? "原件提取文本" : "原件解码文本"}第 ${result.line_start}—${result.line_end} 行${result.truncated ? "（已截断）" : ""}；已核对原件摘要${result.locator_basis === "extracted-source-text" ? "。行号属于提取文本，不代表原文件页码或排版。" : ""}` }),
+          element("pre", { text: result.text }),
+        );
+        button.textContent = "收起原文";
+      } catch (error) {
+        preview.textContent = error.message || "原文暂不可用，请重试";
+        button.textContent = "关闭提示后重试";
+      } finally { button.disabled = false; }
+    });
+    card.append(button, preview);
+  }
   const href = safeHttpUrl(source.origin);
   if (href) {
     const link = element("a", {
@@ -571,8 +614,52 @@ function recentDocumentCard(entry) {
   return card;
 }
 
+function renderFavorites() {
+  if (!state.favorites) return;
+  const { items, error } = state.favorites.snapshot();
+  const exportButton = element("button", { type: "button", className: "context-clear", text: "导出清单" });
+  exportButton.disabled = Boolean(error) || items.length === 0;
+  exportButton.addEventListener("click", () => {
+    try {
+      const blob = new Blob([JSON.stringify(state.favorites.exportData(), null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = element("a", { href: url, download: "knowledge-favorites.json" });
+      document.body.append(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showToast("已导出收藏编号和时间，不含正文");
+    } catch { showToast("收藏清单导出失败，请检查浏览器存储"); }
+  });
+  const section = contextSection("我的收藏", items.length, exportButton);
+  section.id = "favorites-section";
+  section.append(element("p", { className: "favorites-hint", text: error || "仅保存在此浏览器。清理浏览器数据会丢失收藏；导出清单不含正文。" }));
+  for (const entry of items) {
+    const documentItem = state.documents.get(entry.id);
+    const card = element("button", { type: "button", className: "relation-card",
+      text: documentItem?.title || "暂不可见的收藏（记录已保留）" });
+    card.disabled = !documentItem;
+    card.addEventListener("click", () => { navigateToDocument(entry.id); setMobilePanel("content"); });
+    section.append(card);
+    if (!documentItem) {
+      const remove = element("button", { type: "button", className: "context-clear", text: "取消此收藏" });
+      remove.addEventListener("click", () => {
+        const result = state.favorites.set(entry.id, false);
+        showToast(result.message);
+        if (result.ok) {
+          const active = state.documents.get(state.activeDocumentId);
+          if (active) renderDocumentContext(active);
+          else renderNodeContext(state.nodes.get(state.activeNodeId));
+        }
+      });
+      section.append(remove);
+    }
+  }
+  if (!error && !items.length) section.append(element("p", { text: "打开知识卡后可添加收藏。" }));
+  ui.contextView.append(section);
+}
+
 function renderDocumentContext(documentItem) {
   clear(ui.contextView);
+  renderFavorites();
   const recentEntries = window.KnowledgeReadingHistory?.recentEntries(
     state.documents,
     { limit: 6 },
@@ -654,6 +741,7 @@ function renderDocumentContext(documentItem) {
 
 function renderNodeContext(node) {
   clear(ui.contextView);
+  renderFavorites();
   const relations = relationsForNode(node.id);
   if (relations.length) {
     const section = contextSection("节点辅助关系", relations.length);
@@ -748,7 +836,39 @@ function showSearch() {
   ui.searchDialog.hidden = false;
   document.body.classList.add("search-open");
   renderSearchFilters();
-  window.setTimeout(() => ui.searchInput.focus(), 0);
+  runSearch(ui.searchInput.value);
+  window.setTimeout(() => { if (!ui.searchDialog.hidden) ui.searchInput.focus(); }, 0);
+}
+
+function handleSearchKeydown(event) {
+  if (ui.searchDialog.hidden || event.isComposing || event.keyCode === 229) return;
+  if (event.key === "Tab") {
+    const controls = [...ui.searchDialog.querySelectorAll("button, input, select, [tabindex]")]
+      .filter((node) => !node.disabled && node.tabIndex >= 0 && node.getClientRects().length);
+    const first = controls[0];
+    const last = controls[controls.length - 1];
+    if (!first) return;
+    const active = document.activeElement;
+    if (!controls.includes(active) || (event.shiftKey ? active === first : active === last)) {
+      event.preventDefault();
+      (event.shiftKey ? last : first).focus();
+    }
+    return;
+  }
+  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+  const results = [...ui.searchResults.querySelectorAll("button.search-result")];
+  const index = results.indexOf(event.target);
+  if (event.target !== ui.searchInput && index < 0) return;
+  if (!results.length) return;
+  if (event.key === "Enter" && event.target === ui.searchInput) {
+    event.preventDefault();
+    results[0].click();
+  } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    const next = index < 0 ? (event.key === "ArrowDown" ? 0 : results.length - 1)
+      : index + (event.key === "ArrowDown" ? 1 : -1);
+    (results[next] || ui.searchInput).focus();
+  }
 }
 
 function hideSearch() {
@@ -758,6 +878,36 @@ function hideSearch() {
   clear(ui.searchResults);
   ui.searchHint.textContent = "输入关键词开始搜索；支持中文连续匹配。";
   ui.searchTrigger.focus();
+}
+
+function rememberSearchContext(item) {
+  state.searchReturn = item.type === "document" ? {
+    documentId: item.id,
+    query: ui.searchInput.value,
+    filter: state.searchFilter,
+    path: [...state.searchPath],
+    tag: state.searchTag,
+    status: state.searchStatus,
+    scrollTop: ui.searchResults.scrollTop,
+    page: state.searchPage,
+  } : null;
+}
+
+function restoreSearchContext() {
+  const saved = state.searchReturn;
+  if (!saved) return;
+  ui.searchInput.value = saved.query;
+  state.searchFilter = saved.filter;
+  state.searchPath = [...saved.path];
+  state.searchTag = saved.tag;
+  state.searchStatus = saved.status;
+  showSearch();
+  runSearch(saved.query, saved.page);
+  window.setTimeout(() => {
+    const buttons = [...ui.searchResults.querySelectorAll("button")];
+    buttons.find((button) => button.dataset.documentId === saved.documentId)?.focus({ preventScroll: true });
+    ui.searchResults.scrollTop = saved.scrollTop;
+  }, 0);
 }
 
 const SEARCH_FILTERS = window.KnowledgeSearch?.FILTERS || [
@@ -785,48 +935,139 @@ function renderSearchFilters() {
     );
     button.addEventListener("click", () => {
       state.searchFilter = filter.value;
+      if (filter.value === "node") {
+        state.searchTag = "";
+        state.searchStatus = "";
+      }
       renderSearchFilters();
       runSearch(ui.searchInput.value);
       ui.searchInput.focus();
     });
     ui.searchFilters.append(button);
   }
+  const facets = window.KnowledgeSearch.facetOptions(state.search?.items || []);
+  const facetConfigs = [
+    {
+      label: "专业路径",
+      selected: JSON.stringify(state.searchPath),
+      options: facets.paths.map((path) => [JSON.stringify(path), pathText(path)]),
+      change: (value) => { state.searchPath = JSON.parse(value); },
+    },
+    {
+      label: "标签",
+      selected: state.searchTag,
+      options: facets.tags.map((tag) => [tag, tag]),
+      change: (value) => {
+        state.searchTag = value;
+        if (value && state.searchFilter === "node") state.searchFilter = "document";
+      },
+    },
+    {
+      label: "可信状态",
+      selected: state.searchStatus,
+      options: facets.statuses.map((item) => [item.value, `${item.label}（${item.count}）`]),
+      change: (value) => {
+        state.searchStatus = value;
+        if (value && state.searchFilter === "node") state.searchFilter = "document";
+      },
+    },
+  ];
+  for (const { label, selected, options, change } of facetConfigs) {
+    const select = element("select", { "aria-label": label, className: "search-facet" });
+    select.append(element("option", { value: label === "专业路径" ? "[]" : "", text: `全部${label}` }));
+    for (const [value, text] of options) select.append(element("option", { value, text }));
+    select.value = selected;
+    select.addEventListener("change", () => {
+      change(select.value);
+      renderSearchFilters();
+      runSearch(ui.searchInput.value);
+      [...ui.searchFilters.querySelectorAll("select")]
+        .find((node) => node.getAttribute("aria-label") === label)?.focus();
+    });
+    ui.searchFilters.append(select);
+  }
+  const reset = element("button", { type: "button", className: "search-filter", text: "清除筛选" });
+  reset.addEventListener("click", () => {
+    state.searchFilter = "all";
+    state.searchPath = [];
+    state.searchTag = "";
+    state.searchStatus = "";
+    renderSearchFilters();
+    runSearch(ui.searchInput.value);
+    ui.searchInput.focus();
+  });
+  ui.searchFilters.append(reset);
 }
 
-function runSearch(value) {
+function highlightedSearchText(tag, text, query, className = "") {
+  const container = element(tag, { className });
+  for (const part of window.KnowledgeSearch.highlightParts(text, query)) {
+    container.append(element(part.matched ? "mark" : "span", { text: part.text }));
+  }
+  return container;
+}
+
+function runSearch(value, page = 0) {
+  state.searchPage = Number.isSafeInteger(page) ? Math.max(0, page) : 0;
   const tokens = window.KnowledgeSearch?.tokenizeQuery(value) || [];
   clear(ui.searchResults);
-  if (!tokens.length) {
+  if (!tokens.length && !state.searchPath.length && !state.searchTag && !state.searchStatus) {
     ui.searchHint.textContent = `输入关键词开始搜索；当前范围：${searchFilterLabel()}。`;
     return;
   }
-  const results = window.KnowledgeSearch?.search(state.search.items, value, {
+  const results = window.KnowledgeSearch?.search(state.search?.items || [], value, {
     filter: state.searchFilter,
-    limit: 30,
+    path: state.searchPath,
+    tag: state.searchTag,
+    status: state.searchStatus,
+    limit: 31,
+    offset: state.searchPage * 30,
   }) || [];
+  const hasNext = results.length > 30;
+  const visible = results.slice(0, 30);
   ui.searchHint.textContent = results.length
-    ? `找到 ${results.length} 条${searchFilterLabel()}结果`
-    : `当前范围没有找到匹配内容（${searchFilterLabel()}）`;
-  for (const result of results) {
+    ? `显示第 ${state.searchPage * 30 + 1}—${state.searchPage * 30 + visible.length} 条${searchFilterLabel()}结果${hasNext ? "，还有更多结果" : ""}`
+    : `当前范围没有找到匹配内容（${searchFilterLabel()}），可清除筛选或缩短关键词。`;
+  for (const result of visible) {
     const item = result.item;
+    const snippet = window.KnowledgeSearch.resultSnippet(item, value, state.documents.get(item.id)?.content);
     const button = element(
       "button",
-      { className: "search-result", type: "button" },
+      { className: "search-result", type: "button", dataset: { documentId: item.type === "document" ? item.id : "" } },
       element("span", { className: "result-kind", text: item.type === "document" ? "文" : "类" }),
       element(
         "span",
         {},
-        element("strong", { text: item.title }),
+        highlightedSearchText("strong", item.title, value),
         element("small", { text: pathText(item.path) }),
+        highlightedSearchText("span", snippet, value, "search-snippet"),
       ),
       element("span", { text: "›", "aria-hidden": "true" }),
     );
     button.addEventListener("click", () => {
+      rememberSearchContext(item);
       hideSearch();
       if (item.type === "document") navigateToDocument(item.id);
       else navigateToNode(item.node_id);
     });
     ui.searchResults.append(element("li", {}, button));
+  }
+  if (state.searchPage > 0 || hasNext) {
+    const navigation = element("li", { className: "search-pagination" });
+    for (const [label, target, enabled] of [
+      ["上一页", state.searchPage - 1, state.searchPage > 0],
+      ["下一页", state.searchPage + 1, hasNext],
+    ]) {
+      if (!enabled) continue;
+      const button = element("button", { type: "button", className: "search-filter", text: label });
+      button.addEventListener("click", () => {
+        runSearch(ui.searchInput.value, target);
+        ui.searchResults.scrollTop = 0;
+        ui.searchResults.querySelectorAll("button")[0]?.focus({ preventScroll: true });
+      });
+      navigation.append(button);
+    }
+    ui.searchResults.append(navigation);
   }
 }
 
@@ -1063,6 +1304,7 @@ function bindUi() {
     closer.addEventListener("click", hideSearch);
   }
   ui.searchInput.addEventListener("input", (event) => runSearch(event.target.value));
+  ui.searchDialog.addEventListener("keydown", handleSearchKeydown);
   renderSearchFilters();
   for (const button of ui.mobileTabs) {
     button.addEventListener("click", () => setMobilePanel(button.dataset.panel));
@@ -1078,6 +1320,7 @@ function bindUi() {
     if (window.innerWidth > 1180) document.body.classList.remove("context-open");
   });
   document.addEventListener("keydown", (event) => {
+    if (event.isComposing || event.keyCode === 229) return;
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
       event.preventDefault();
       showSearch();
@@ -1104,17 +1347,18 @@ function showFatalError(error) {
 
 async function start() {
   bindUi();
-  if (window.KnowledgeLocalIngest) {
-    void window.KnowledgeLocalIngest.mount({ notify: showToast }).catch(() => {
-      // A static/public build intentionally has no writable local manager.
-    });
-  }
+  const localIngest = window.KnowledgeLocalIngest
+    ? window.KnowledgeLocalIngest.mount({ notify: showToast }).catch(() => null)
+    : Promise.resolve(null);
   try {
     const dataSource = window.KnowledgeDataSources.fromDocument(document);
     const { data, search, graph } = await dataSource.loadWorkspace();
     state.data = data;
     state.search = search;
     state.graph = graph;
+    state.favorites = window.KnowledgeFavorites?.createStore({ scope: JSON.stringify([
+      location.pathname.replace(/index\.html$/, ""), data.root, data.site.visibility,
+    ]) });
     setupIndexes();
     if (window.KnowledgeLocalClassification) {
       await window.KnowledgeLocalClassification.mount({ notify: showToast });
@@ -1123,7 +1367,7 @@ async function start() {
       await window.KnowledgeLocalReview.mount({ notify: showToast });
     }
     if (window.KnowledgeLocalReviewQueue) {
-      window.KnowledgeLocalReviewQueue.mount({
+      state.reviewQueue = window.KnowledgeLocalReviewQueue.mount({
         documents: data.documents,
         notify: showToast,
         openDocument: navigateToDocument,
@@ -1138,6 +1382,7 @@ async function start() {
     ui.privacyBadge.textContent = privateBuild ? "私密知识库" : "公开知识库";
     document.documentElement.dataset.visibility = data.site.visibility;
     updateConnection();
+    state.localIngest = await localIngest;
     const pendingDocumentId = window.KnowledgeLocalIngest?.peekPendingDocumentId();
     if (pendingDocumentId && state.documents.has(pendingDocumentId)) {
       navigateToDocument(pendingDocumentId);
@@ -1149,6 +1394,10 @@ async function start() {
       readRoute();
     }
     ui.app.setAttribute("aria-busy", "false");
+    void localIngest.then((controller) => window.KnowledgeFirstUse?.mount({
+      container: document.getElementById("first-use"), data, controller,
+      openDocument: navigateToDocument,
+    }));
 
     if ("serviceWorker" in navigator && window.isSecureContext) {
       navigator.serviceWorker.register("./service-worker.js").catch(() => {

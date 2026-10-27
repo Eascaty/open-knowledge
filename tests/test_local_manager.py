@@ -46,6 +46,18 @@ from knowledge_os.local_manager import (
 from knowledge_os.local_manager_cli import _command_start
 
 
+class LoopbackBindingTests(unittest.TestCase):
+    def test_server_binding_does_not_reverse_resolve_loopback(self) -> None:
+        from knowledge_os.local_http import ManagerHttpServer, ManagerRequestHandler
+        with mock.patch("socket.getfqdn", side_effect=AssertionError("DNS forbidden")):
+            server = ManagerHttpServer(("127.0.0.1", 0), ManagerRequestHandler)
+        try:
+            self.assertEqual(server.server_name, "127.0.0.1")
+            self.assertGreater(server.server_port, 0)
+        finally:
+            server.server_close()
+
+
 class _HttpManagerStub:
     def __init__(self, paths: ProjectPaths) -> None:
         self.paths = paths

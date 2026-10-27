@@ -27,6 +27,7 @@
     <script src="./assets/markdown-reader.js" defer></script>
     <script src="./assets/reading-history.js" defer></script>
     <script src="./assets/reading-actions.js" defer></script>
+    <script src="./assets/first-use.js" defer></script>
     <script src="./assets/app.js" defer></script>
   </head>
   <body>
@@ -43,7 +44,7 @@
           </span>
         </a>
 
-        <button class="search-trigger" id="search-trigger" type="button" aria-haspopup="dialog">
+        <button class="search-trigger" id="search-trigger" type="button" aria-haspopup="dialog" aria-label="搜索全部知识">
           <span aria-hidden="true">⌕</span>
           <span>搜索全部知识</span>
           <kbd>⌘ K</kbd>
@@ -95,6 +96,7 @@
         </aside>
 
         <section class="content-panel panel" id="knowledge-content" tabindex="-1">
+          <section class="first-use" id="first-use" hidden></section>
           <nav class="breadcrumbs" id="breadcrumbs" aria-label="当前专业路径"></nav>
           <div id="content-view">
             <div class="loading-state">
@@ -138,11 +140,12 @@
         </div>
         <div class="search-box">
           <span aria-hidden="true">⌕</span>
-          <input id="search-input" type="search" autocomplete="off" placeholder="输入概念、标题、标签或专业路径">
+          <input id="search-input" type="search" autocomplete="off" placeholder="输入概念、标题、标签或专业路径" aria-describedby="search-keyboard-help">
           <kbd>ESC</kbd>
         </div>
         <nav class="search-filters" id="search-filters" aria-label="搜索范围"></nav>
-        <div class="search-hint" id="search-hint">输入关键词开始搜索；支持中文连续匹配。</div>
+        <div class="search-hint" id="search-hint" aria-live="polite">输入关键词开始搜索；支持中文连续匹配。</div>
+        <p id="search-keyboard-help" class="search-hint">↑↓ 选择结果 · 回车打开 · Esc 关闭</p>
         <ol class="search-results" id="search-results"></ol>
       </div>
     </section>
@@ -159,13 +162,21 @@
           <button type="button" class="icon-button" data-close-review-queue aria-label="关闭可信审核队列">×</button>
         </div>
         <nav class="review-queue-filters" id="review-queue-filters" aria-label="按可信状态筛选"></nav>
-        <div class="review-queue-body">
+        <div class="review-queue-search">
+          <label for="review-queue-query">筛选复核知识</label>
+          <div class="review-queue-search-row">
+            <input id="review-queue-query" type="search" autocomplete="off" placeholder="标题、摘要、标签或专业路径">
+            <button id="review-queue-clear-query" type="button">清除关键词</button>
+          </div>
+          <p id="review-queue-matches" aria-live="polite"></p>
+        </div>
+        <div class="review-queue-body" id="review-queue-body">
           <ol class="review-queue-list" id="review-queue-list"></ol>
           <p class="review-queue-empty" id="review-queue-empty" hidden></p>
           <button class="review-queue-more" id="review-queue-more" type="button" hidden>显示更多</button>
         </div>
         <div class="review-queue-foot">
-          <span>打开知识后，可在右侧先预览再确认可信状态。</span>
+          <span>打开知识后可调整可信状态；暂缓仅本次有效，刷新后恢复。</span>
           <button class="review-queue-done" type="button" data-close-review-queue>完成</button>
         </div>
       </div>

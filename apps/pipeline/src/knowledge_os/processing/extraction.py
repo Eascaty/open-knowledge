@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import io
 import json
 import re
 import shutil
@@ -10,7 +11,7 @@ import subprocess
 import zipfile
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import BinaryIO, List, Optional, Tuple, Union
 from xml.etree import ElementTree
 
 class ExtractionError(RuntimeError):
@@ -148,9 +149,9 @@ def _title_from_text(text: str, fallback: str) -> str:
     return Path(fallback).stem[:200] or "未命名资料"
 
 
-def _extract_docx(path: Path) -> str:
+def _extract_docx(path: Union[Path, BinaryIO]) -> str:
     try:
-        with zipfile.ZipFile(str(path)) as archive:
+        with zipfile.ZipFile(str(path) if isinstance(path, Path) else path) as archive:
             document = archive.getinfo("word/document.xml")
             if document.flag_bits & 0x1:
                 raise ExtractionError("encrypted DOCX is not supported")
@@ -203,15 +204,12 @@ def _extract_pdf(path: Path) -> str:
     return text
 
 
-def extract_source(path: Path, original_name: str) -> Tuple[str, str]:
+def extract_source_bytes(data: bytes, original_name: str) -> Tuple[str, str]:
+    """Extract supported in-memory sources without reopening a mutable path."""
     suffix = Path(original_name).suffix.casefold()
     if suffix == ".docx":
-        body = _extract_docx(path)
+        body = _extract_docx(io.BytesIO(data))
         return _title_from_text(body, original_name), body
-    if suffix == ".pdf":
-        body = _extract_pdf(path)
-        return _title_from_text(body, original_name), body
-    data = path.read_bytes()
     if suffix in {".html", ".htm"}:
         parser = _ReadableHTMLParser()
         parser.feed(_decode_text(data))
@@ -227,6 +225,16 @@ def extract_source(path: Path, original_name: str) -> Tuple[str, str]:
         body = _decode_text(data).replace("\x00", "").strip()
         return _title_from_text(body, original_name), body
     raise ExtractionError(f"unsupported local format: {suffix or '(none)'}")
+
+
+def extract_source(path: Path, original_name: str) -> Tuple[str, str]:
+    if Path(original_name).suffix.casefold() == ".docx":
+        body = _extract_docx(path)
+        return _title_from_text(body, original_name), body
+    if Path(original_name).suffix.casefold() == ".pdf":
+        body = _extract_pdf(path)
+        return _title_from_text(body, original_name), body
+    return extract_source_bytes(path.read_bytes(), original_name)
 
 
 def _normalized_markdown(

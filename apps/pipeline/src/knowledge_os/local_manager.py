@@ -17,6 +17,7 @@ from typing import Any, BinaryIO, Callable, Dict, Mapping, Optional, Sequence
 
 from .automation import AutomationResult, run_full_pipeline
 from .config import ProjectPaths, atomic_write_json, initialize_layout
+from .local_session import browser_session_payload
 from .local_http import (
     DEFAULT_HOST,
     DEFAULT_PORT,
@@ -26,7 +27,6 @@ from .local_http import (
     create_manager_server,
 )
 from .local_inbox import (
-    HISTORY_LIMIT,
     InboxUploadStore,
     database_work_pending,
     limited_upload_history,
@@ -275,21 +275,7 @@ class LocalKnowledgeManager:
         store = self.inbox_store
         if store is None:
             raise ManagerError("browser inbox is not initialized")
-        return {
-            "ok": True,
-            "schema_version": 1,
-            "api_version": "browser-v1",
-            "service": SERVICE_NAME,
-            "session_token": self.browser_token,
-            "capabilities": {
-                "file_upload": True,
-                "manual_classification": True,
-                "document_review": True,
-                "maximum_file_bytes": store.maximum_bytes,
-                "accepted_extensions": list(store.accepted_extensions),
-                "history_limit": HISTORY_LIMIT,
-            },
-        }
+        return browser_session_payload(SERVICE_NAME, self.browser_token, store)
 
     def inbox_status(self) -> Dict[str, Any]:
         with self.state_lock:

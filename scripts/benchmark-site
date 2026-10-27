@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+"""Offline, fixed-fixture static-site benchmark; no workspace access."""
+import hashlib
+import json
+import platform
+import statistics
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "apps/pipeline/src"))
+from knowledge_os.site import build_site
+from knowledge_os.operations.checks import CheckStatus, check_site_bundle, check_broken_links
+
+
+def require(condition, message):
+    # Remains active even when Python is invoked with -O.
+    if not condition:
+        raise RuntimeError(message)
+
+
+def fixture(size, visibility):
+    documents = []
+    for i in range(size):
+        marker = "FICTION_PRIVATE_ONLY" if i % 5 == 0 else "FICTION_PUBLIC_ONLY"
+        content = (f"{marker} card-{i:05d}\n" + "固定虚构资料用于建站性能测试。\n" * 100).rstrip()
+        documents.append({
+            "id": f"card-{i:05d}", "source_id": f"source-{i:05d}",
+            "title": f"虚构卡片 {i:05d}", "summary": "虚构知识测试摘要",
+            "node_id": f"direction-{i % 10}", "tags": [f"标签{i % 4}"],
+            "content": content, "visibility": "private" if visibility == "private" or i % 5 == 0 else "public",
+            "status": "unverified", "updated_at": "2026-01-01T00:00:00Z",
+            "source": {"origin": "fictional-fixture", "original_name": f"card-{i:05d}.md"},
+            "body_sha256": hashlib.sha256(content.encode()).hexdigest(),
+            "splitter_version": "fictional-site-v1",
+            "review": {"note": "FICTION_REVIEW_ONLY", "history": []},
+        })
+    return {"schema_version": 1, "generated_at": "2026-01-01T00:00:00Z",
+            "root": "root", "site": {"title": "虚构大库建站测试"},
+            "nodes": [{"id": "root", "parent_id": None, "name": "虚构专业", "path": []}]
+            + [{"id": f"direction-{i}", "parent_id": "root", "name": f"方向{i}",
+                "path": [f"方向{i}"]} for i in range(10)],
+            "documents": documents, "relations": []}
+
+
+def verify(output, data, visibility):
+    original = {doc["id"]: doc for doc in data["documents"]}
+    expected = {doc["id"] for doc in data["documents"]
+                if visibility == "private" or doc["visibility"] == "public"}
+    canonical = json.loads((output / "data/site-data.json").read_text())
+    search = json.loads((output / "data/search-index.json").read_text())
+    docs = canonical["documents"]
+    require(len(docs) == len(expected) and {doc["id"] for doc in docs} == expected,
+            "Canonical card IDs differ")
+    indexed = [item for item in search["items"] if item["type"] == "document"]
+    require(len(indexed) == len(expected) and {item["id"] for item in indexed} == expected,
+            "Search card IDs differ")
+    for item in indexed:
+        require(item["id"] in item["search_text"], "Search body lost unique marker")
+    for doc in docs:
+        require(doc["content"] == original[doc["id"]]["content"], "Card body differs from fixture")
+        require(hashlib.sha256(doc["content"].encode()).hexdigest() == doc["body_sha256"],
+                "Card content hash changed")
+        require(("review" in doc) == (visibility == "private"), "Review visibility changed")
+        if visibility == "private":
+            require(doc["review"]["note"] == "FICTION_REVIEW_ONLY", "Private review note lost")
+    for check in (check_site_bundle(output, expected_visibility=visibility),
+                  check_broken_links((output,), project_root=output)):
+        require(check.status == CheckStatus.PASS, f"{check.name}: {check.details}")
+    digest = hashlib.sha256()
+    total = 0
+    for path in sorted(output.rglob("*")):
+        if not path.is_file():
+            continue
+        payload = path.read_bytes()
+        if visibility == "public":
+            require(b"FICTION_PRIVATE_ONLY" not in payload and b"FICTION_REVIEW_ONLY" not in payload,
+                    "Fictional private marker leaked")
+        total += len(payload)
+        digest.update(path.relative_to(output).as_posix().encode() + b"\0")
+        digest.update(hashlib.sha256(payload).digest())
+    return {"output_cards": len(expected), "output_bytes": total,
+            "bundle_sha256": digest.hexdigest()}
+
+
+def benchmark(size, root):
+    cases = []
+    for visibility in ("private", "public"):
+        data = fixture(size, visibility)
+        encoded = json.dumps(data, ensure_ascii=False, sort_keys=True).encode()
+        output = root / f"{size}-{visibility}"
+        samples = []
+        baseline = None
+        # One cold warmup, then three complete atomic replacements at the same path.
+        for iteration in range(4):
+            started = time.perf_counter()
+            result = build_site(data, output, visibility=visibility)
+            elapsed = (time.perf_counter() - started) * 1000
+            metrics = verify(output, data, visibility)
+            require(result.document_count == metrics["output_cards"], "Build result count differs")
+            if baseline is None:
+                baseline = metrics
+            require(metrics == baseline, "Repeated build is not deterministic")
+            if iteration:
+                samples.append(round(elapsed, 3))
+        require(json.dumps(data, ensure_ascii=False, sort_keys=True).encode() == encoded,
+                "Builder mutated fixture")
+        cases.append({"visibility": visibility, **baseline,
+                      "fixture_bytes": len(encoded),
+                      "fixture_sha256": hashlib.sha256(encoded).hexdigest(), "samples_ms": samples,
+                      "median_ms": statistics.median(samples), "max_ms": max(samples)})
+    return {"input_cards": size, "cases": cases}
+
+
+def main():
+    if len(sys.argv) != 1:
+        print("Usage: python3 scripts/benchmark-site (fixed fixtures; JSON on stdout)", file=sys.stderr)
+        return 2
+    with tempfile.TemporaryDirectory(prefix="knowledge-site-benchmark-") as temporary:
+        report = {"schema_version": 1, "fixture_version": "fictional-site-v1",
+                  "scope": "canonical to static site; excludes ingestion, database, browser and publication gate",
+                  "runtime": {"python": platform.python_version(), "system": platform.system(),
+                              "machine": platform.machine()},
+                  "warmup_runs": 1, "measured_runs": 3,
+                  "datasets": [benchmark(size, Path(temporary)) for size in (1000, 10000)]}
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

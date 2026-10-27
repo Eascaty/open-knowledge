@@ -57,7 +57,59 @@ function testClearAndStorageFailureDoNotBreakBrowsing() {
   assert.equal(api.record("java", { storage: broken, now: 2 }), false);
 }
 
+const favorites = context.KnowledgeFavorites;
+function testFavoritesSurviveNewStoreAndKeepOriginalTime() {
+  const storage = new Storage();
+  const first = favorites.createStore({ storage, scope: "private" });
+  assert.equal(first.set("a", true, 10).ok, true);
+  assert.equal(first.set("a", true, 20).ok, true);
+  const second = favorites.createStore({ storage, scope: "private" });
+  assert.equal(second.has("a"), true);
+  assert.equal(second.snapshot().items[0].savedAt, 10);
+  assert.equal(second.set("a", false).ok, true);
+  assert.equal(first.has("a"), false);
+}
+function testFavoriteScopeIsolation() {
+  const storage = new Storage();
+  const a = favorites.createStore({ storage, scope: "/a/private" });
+  a.set("same-id", true, 1);
+  for (const scope of ["/a/public", "/b/private"]) assert.equal(favorites.createStore({ storage, scope }).has("same-id"), false);
+}
+function testBrokenFavoritesAreNotOverwritten() {
+  const storage = new Storage();
+  const store = favorites.createStore({ storage, scope: "test" });
+  for (const raw of ["bad-json", '{"version":2,"items":[]}', '{"version":1,"items":[null]}']) {
+    storage.setItem(store.key, raw);
+    assert.equal(store.set("new", true).ok, false);
+    assert.equal(storage.getItem(store.key), raw);
+    assert.throws(() => store.exportData());
+  }
+  const denied = favorites.createStore({ storage: { getItem: () => null, setItem: () => { throw Error("quota"); } }, scope: "x" });
+  assert.equal(denied.set("a", true).ok, false);
+}
+function testFavoriteLimitNeverSilentlyEvicts() {
+  const storage = new Storage();
+  const store = favorites.createStore({ storage, scope: "test" });
+  for (let i = 0; i < 200; i += 1) assert.equal(store.set(`id-${i}`, true, i).ok, true);
+  assert.equal(store.set("overflow", true).ok, false);
+  assert.equal(store.has("id-0"), true);
+  assert.equal(store.set("id-0", true, 999).ok, true);
+  store.set("id-0", false);
+  assert.equal(store.set("overflow", true).ok, true);
+}
+function testFavoriteExportContainsOnlyReferences() {
+  const storage = new Storage();
+  const store = favorites.createStore({ storage, scope: "test" });
+  storage.setItem(store.key, JSON.stringify({version:1,items:[{id:"unavailable",savedAt:10,title:"PRIVATE",body:"PRIVATE"}]}));
+  assert.deepEqual(JSON.parse(JSON.stringify(store.exportData())), {format:"knowledge-favorites",version:1,items:[{id:"unavailable",savedAt:10}]});
+  assert.equal(store.set("", true).ok, false);
+  assert.equal(store.set("bad-date", true, -1).ok, false);
+  assert.equal(store.has("unavailable"), true);
+}
+[testFavoritesSurviveNewStoreAndKeepOriginalTime, testFavoriteScopeIsolation, testBrokenFavoritesAreNotOverwritten,
+  testFavoriteLimitNeverSilentlyEvicts, testFavoriteExportContainsOnlyReferences].forEach(test => test());
+
 [testRecordsNewestFirstAndCapsEntries, testMalformedStorageAndDocumentLookupAreSafe,
   testLimitCannotExceedPrivateHistoryBound, testClearAndStorageFailureDoNotBreakBrowsing]
   .forEach((test) => test());
-process.stdout.write("Web reading history: 4/4 passed\n");
+process.stdout.write("Web reading history and favorites: 9/9 passed\n");
